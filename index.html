@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Mortgage Affordability Calculator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="wrap">
+  <h1>Mortgage Affordability Calculator</h1>
+  <p class="sub">Western PA — gross-to-net pay vs. estimated housing cost</p>
+
+  <div class="split-layout">
+    <div class="inputs-col">
+      <section class="card">
+        <h2>Income</h2>
+        <label>Annual gross salary ($)
+          <input type="text" class="money-input" id="salary" value="120,000">
+        </label>
+        <label>Filing status
+          <select id="filingStatus">
+            <option value="single">Single</option>
+            <option value="mfj">Married filing jointly</option>
+          </select>
+        </label>
+        <label>Traditional 401(k) contribution ($/yr)
+          <input type="text" class="money-input" id="contrib401k" value="10,000">
+        </label>
+        <label>Roth contribution ($/yr) <span class="hint">(Roth 401k or Roth IRA, after-tax)</span>
+          <input type="text" class="money-input" id="contribRoth" value="7,000">
+        </label>
+        <label>Pay frequency <span class="hint">how often you're paid — used to convert your per-paycheck health insurance premium below into an annual figure</span>
+          <select id="payFrequency">
+            <option value="52">Weekly (52/yr)</option>
+            <option value="26" selected>Biweekly (26/yr)</option>
+            <option value="24">Semi-monthly (24/yr)</option>
+            <option value="12">Monthly (12/yr)</option>
+          </select>
+        </label>
+        <label>Health insurance premium (per paycheck $) <span class="hint">read straight off your paystub — pre-tax under Section 125, so it also reduces FICA, PA state, and local EIT wages (unlike 401k)</span>
+          <input type="text" class="money-input" id="payrollInsurancePerPaycheck" value="125">
+        </label>
+        <label>Local Earned Income Tax rate (%) <span class="hint">auto-fills to 3.00% (1% city + 2% school) for City of Pittsburgh, 1% elsewhere — edit if known</span>
+          <input type="number" id="eitRate" value="1" min="0" step="0.1">
+        </label>
+      </section>
+
+      <section class="card">
+        <div class="card-section">
+          <h2>Monthly Debt Obligations <span class="card-section-tag">Underwriting</span></h2>
+          <p class="hint">Credit cards, car loans, student loans, personal loans, alimony/child support — these feed the lender's Back-End DTI (36% rule). Set a duration for debts that end (e.g. a car loan) and they'll drop out of the cash-flow projection at the right month. Held flat (no inflation growth) over the 5-year outlook.</p>
+          <div id="debtExpenseRows" class="expense-list"></div>
+          <button type="button" id="addDebtExpenseBtn" class="secondary-btn">+ Add debt payment</button>
+        </div>
+
+        <div class="card-section card-section-divider">
+          <h2>Lifestyle & Living Expenses <span class="card-section-tag muted">Budgeting only</span></h2>
+          <p class="hint">Utilities, groceries, subscriptions, extra health costs, savings goals — excluded from lender DTI, but still reduce your actual discretionary cash flow. Grows 3%/yr over the 5-year outlook.</p>
+          <div id="lifestyleExpenseRows" class="expense-list"></div>
+          <button type="button" id="addLifestyleExpenseBtn" class="secondary-btn">+ Add lifestyle expense</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Home & Mortgage</h2>
+        <label>County
+          <select id="county"></select>
+        </label>
+        <label>Home price ($)
+          <input type="text" class="money-input" id="homePrice" value="400,000">
+        </label>
+        <label>Down payment
+          <span class="inline">
+            <input type="number" id="downPct" value="10" min="0" max="100" step="0.5"> %
+            <input type="text" class="money-input" id="downAmt" value="40,000"> $
+          </span>
+        </label>
+        <label>Interest rate (% APR)
+          <input type="number" id="rate" value="6.5" min="0" step="0.01">
+        </label>
+        <label>Loan term (years)
+          <select id="term">
+            <option value="30">30</option>
+            <option value="15">15</option>
+          </select>
+        </label>
+        <label>Municipality / School District
+          <select id="muni"></select>
+        </label>
+        <label>County millage (mills) <span class="hint" id="countyMillageHint">editable, current rate</span>
+          <input type="number" id="countyMillage" value="4.73" min="0" step="0.01">
+        </label>
+        <label>Assessment ratio (%) <span class="hint" id="ratioHint">assessed value as % of market value — counties tax assessed value, not market value</span>
+          <input type="number" id="ratio" value="52" min="0.1" max="100" step="0.01">
+        </label>
+        <label>Annual homeowners insurance ($) <span class="hint">default ~0.35% of home price</span>
+          <input type="text" class="money-input" id="insurance" value="1,400">
+        </label>
+        <label>PMI rate (% of loan/yr, if down payment &lt; 20%)
+          <input type="number" id="pmiRate" value="0.5" min="0" step="0.05">
+        </label>
+        <label>HOA Fees (Monthly) ($)
+          <input type="text" class="money-input" id="hoa" value="0">
+        </label>
+        <label>Property Size (Sq Ft) <span class="hint">drives estimated maintenance cost at $1/sq ft/yr — folded into PITI + HOA</span>
+          <input type="number" id="sqft" value="2000" min="0" step="50">
+        </label>
+      </section>
+
+      <button id="calcBtn">Calculate</button>
+    </div>
+
+    <div class="results-col">
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="results">Results & Underwriting</button>
+        <button class="tab-btn" data-tab="amort">Amortization Schedule</button>
+        <button class="tab-btn" data-tab="cashflow">5-Year Cash Flow Outlook</button>
+      </div>
+
+      <div class="tab-panel" id="tab-results">
+        <section class="card results" id="results" style="display:none;">
+          <h2>Results</h2>
+          <div class="grid stats snapshot-stats" id="snapshotStats">
+            <div class="stat stat-accent"><span class="stat-label">Net Take-Home</span><span class="stat-value" id="snapNetTakeHome"></span></div>
+            <div class="stat"><span class="stat-label">Total Housing (PITI+HOA)</span><span class="stat-value" id="snapHousing"></span></div>
+            <div class="stat"><span class="stat-label">Net Discretionary</span><span class="stat-value" id="snapDiscretionary"></span></div>
+          </div>
+          <div class="eit-indicator" id="eitIndicator"></div>
+          <div class="grid">
+            <div>
+              <h3>Take-Home Pay</h3>
+              <table id="payTable"></table>
+            </div>
+            <div>
+              <h3>Monthly Housing Cost</h3>
+              <table id="houseTable"></table>
+            </div>
+          </div>
+          <div class="verdict" id="verdict"></div>
+        </section>
+
+        <section class="card results" id="underwritingCard" style="display:none;">
+          <h2>Lender Underwriting Status (28/36 Rule)</h2>
+          <table id="underwritingTable"></table>
+          <div id="qualifyBadge"></div>
+        </section>
+      </div>
+
+      <div class="tab-panel" id="tab-amort" style="display:none;">
+        <section class="card">
+          <h2>Extra Payments</h2>
+          <label>Extra monthly principal payment ($)
+            <input type="text" class="money-input" id="extraPayment" value="0">
+          </label>
+          <p class="hint">Uses the loan amount, rate, and term from your inputs. Click Calculate first if you've changed those.</p>
+        </section>
+
+        <section class="card results" id="amortSummary" style="display:none;">
+          <h2>Summary</h2>
+          <div class="grid stats">
+            <div class="stat"><span class="stat-label">Payoff time</span><span class="stat-value" id="payoffTime"></span></div>
+            <div class="stat"><span class="stat-label">Total interest paid</span><span class="stat-value" id="totalInterest"></span></div>
+            <div class="stat"><span class="stat-label">Interest saved vs. no extra payments</span><span class="stat-value" id="interestSaved"></span></div>
+            <div class="stat"><span class="stat-label">Time saved</span><span class="stat-value" id="timeSaved"></span></div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Reforecast: Lump Sum Drop-In</h2>
+          <p class="hint">Apply a one-time lump sum to principal at a chosen month, then either shorten the remaining term (keep paying the same amount) or recast (lower the monthly payment, same remaining term).</p>
+          <label class="spaced-above">Lump sum principal payment ($)
+            <input type="text" class="money-input" id="lumpSum" value="0">
+          </label>
+          <label>Target month
+            <select id="lumpSumMonth"></select>
+          </label>
+          <label class="spaced-above">After lump sum
+            <span class="inline radio-group">
+              <label class="radio-label"><input type="radio" name="reforecastMode" value="shorten" checked> Shorten term</label>
+              <label class="radio-label"><input type="radio" name="reforecastMode" value="recast"> Recast payment</label>
+            </span>
+          </label>
+          <button type="button" id="reforecastBtn" class="secondary-btn">Apply Reforecast</button>
+        </section>
+
+        <section class="card results" id="reforecastSummary" style="display:none;">
+          <h2>Reforecast Result</h2>
+          <div class="grid stats">
+            <div class="stat"><span class="stat-label">New monthly payment</span><span class="stat-value" id="rfPayment"></span></div>
+            <div class="stat"><span class="stat-label">New payoff time</span><span class="stat-value" id="rfPayoffTime"></span></div>
+            <div class="stat"><span class="stat-label">Total interest (with lump sum)</span><span class="stat-value" id="rfTotalInterest"></span></div>
+            <div class="stat"><span class="stat-label">Extra interest saved from lump sum</span><span class="stat-value" id="rfInterestSaved"></span></div>
+          </div>
+        </section>
+
+        <section class="card results" id="amortTableWrap" style="display:none;">
+          <h2>Amortization Schedule</h2>
+          <p class="hint">Click a year to expand its monthly breakdown.</p>
+          <table id="amortTable">
+            <colgroup>
+              <col style="width:16%"><col style="width:28%"><col style="width:28%"><col style="width:28%">
+            </colgroup>
+            <thead>
+              <tr><th>Year</th><th>Principal Paid</th><th>Interest Paid</th><th>Ending Balance</th></tr>
+            </thead>
+            <tbody id="amortTableBody"></tbody>
+          </table>
+        </section>
+      </div>
+
+      <div class="tab-panel" id="tab-cashflow" style="display:none;">
+        <section class="card results" id="cashFlowCard" style="display:none;">
+          <h2>5-Year Cash Flow Outlook</h2>
+          <p class="hint">Mortgage P&amp;I and debt obligations held flat. Income, lifestyle expenses, maintenance, HOA, and property tax compound 3%/yr. Limited-duration items drop off at their set month.</p>
+          <div class="chart-wrap"><canvas id="cashFlowChart"></canvas></div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <footer class="app-footer">
+    Disclaimer: This application is an informational budgeting tool and should not be relied upon as formal financial, tax, or underwriting advice. All calculations are intended to be directionally estimates based on user inputs and market baselines.
+  </footer>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
