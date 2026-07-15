@@ -28,6 +28,11 @@ let downPaymentSource = "pct"; // tracks which of downPct/downAmt the user edite
 let cashFlowChart = null;
 const CASH_FLOW_ANNUAL_GROWTH = 0.03; // 3%/yr compounding for income, lifestyle expenses, maintenance, HOA, property tax
 
+// Target parcel resolved from the address search (null until a successful lookup).
+// While set, its actual county assessed value takes precedence over the CLR estimate.
+let targetParcel = null;
+let assessedSource = "estimate"; // 'estimate' (price x CLR) | 'parcel' (county record) | 'manual' (user-typed)
+
 function bracketTax(taxableIncome, brackets) {
   let tax = 0;
   for (const [lo, hi, rate] of brackets) {
@@ -60,23 +65,12 @@ function wireMoneyInputs() {
   });
 }
 
-// --- County / municipality dropdowns ---
-function populateCountyDropdown() {
-  const sel = document.getElementById("county");
-  Object.keys(COUNTY_DEFAULTS).forEach((key) => {
-    const opt = document.createElement("option");
-    opt.value = key;
-    opt.textContent = COUNTY_DEFAULTS[key].label;
-    sel.appendChild(opt);
-  });
-}
-
-function populateMuniDropdown(countyKey) {
+// --- Municipality dropdown (Allegheny County only) ---
+function populateMuniDropdown() {
   const sel = document.getElementById("muni");
   sel.innerHTML = "";
   let lastRegion = null;
-  MILLAGE_DATA.filter((row) => row.county === countyKey).forEach((row) => {
-    const i = MILLAGE_DATA.indexOf(row);
+  MILLAGE_DATA.forEach((row, i) => {
     if (row.region !== lastRegion) {
       const og = document.createElement("optgroup");
       og.label = row.region;
@@ -90,12 +84,18 @@ function populateMuniDropdown(countyKey) {
   });
 }
 
-function applyCountyDefaults(countyKey) {
-  const defaults = COUNTY_DEFAULTS[countyKey];
-  document.getElementById("countyMillage").value = defaults.countyMillage;
-  document.getElementById("ratio").value = defaults.ratioPercent;
-  document.getElementById("countyMillageHint").textContent = `editable, current rate for ${defaults.label}`;
-  document.getElementById("ratioHint").textContent = defaults.ratioNote;
+// Map a county-records MUNIDESC (e.g. "Ross", "14th Ward - PITTSBURGH", "West View")
+// to an index in MILLAGE_DATA, or -1 if no confident match.
+function matchMuniIndex(muniDesc) {
+  const upper = (muniDesc || "").toUpperCase().trim();
+  if (!upper) return -1;
+  if (/^PITTSBURGH$/.test(upper) || /WARD\s*-?\s*PITTSBURGH/.test(upper)) {
+    return MILLAGE_DATA.findIndex((m) => m.muni === "City of Pittsburgh");
+  }
+  // Strip suffixes from our table names ("Ross Township" -> "ROSS") and compare.
+  const stripped = (name) => name.toUpperCase()
+    .replace(/\b(TOWNSHIP|BOROUGH|MUNICIPALITY|CITY OF|CITY)\b/g, "").replace(/\s+/g, " ").trim();
+  return MILLAGE_DATA.findIndex((m) => stripped(m.muni) === upper || stripped(m.muni) === stripped(upper));
 }
 
 // --- Monthly expenses, split into debt obligations (DTI) vs lifestyle (budgeting only) ---
@@ -152,6 +152,14 @@ function syncDownPayment(source) {
   }
 }
 
+// --- Assessed value sync: estimate from price x CLR unless a parcel or manual override owns it ---
+function syncAssessedEstimate() {
+  if (assessedSource !== "estimate") return;
+  const price = parseMoney("homePrice");
+  const estimated = AlleghenyTax.estimateAssessedValue(price);
+  document.getElementById("assessedValue").value = Math.round(estimated).toLocaleString("en-US");
+}
+
 function monthlyPaymentByMonths(loanAmount, annualRate, numMonths) {
   const monthlyRate = annualRate / 12;
   if (loanAmount <= 0 || numMonths <= 0) return 0;
@@ -178,7 +186,6 @@ function calculate() {
   const debtTotal = debtExpenses.reduce((s, e) => s + e.amount, 0);
   const lifestyleTotal = lifestyleExpenses.reduce((s, e) => s + e.amount, 0);
   const otherExpenses = debtTotal + lifestyleTotal;
-  const expenses = debtExpenses.concat(lifestyleExpenses);
 
   const homePrice = parseMoney("homePrice");
   const downAmt = parseMoney("downAmt");
@@ -186,7 +193,9 @@ function calculate() {
   const termYears = parseFloat(document.getElementById("term").value) || 30;
   const muniIdx = parseInt(document.getElementById("muni").value, 10);
   const countyMillage = parseFloat(document.getElementById("countyMillage").value) || 0;
-  const ratio = (parseFloat(document.getElementById("ratio").value) || 100) / 100;
+  const assessedValue = parseMoney("assessedValue");
+  const homesteadEnabled = document.getElementById("homesteadToggle").checked;
+  const transferRate = parseFloat(document.getElementById("transferRate").value) || 0;
   const insurance = parseMoney("insurance");
   const pmiRate = (parseFloat(document.getElementById("pmiRate").value) || 0) / 100;
   const hoa = parseMoney("hoa");
@@ -215,15 +224,21 @@ function calculate() {
   const netMonthly = netAnnual / 12;
   const grossMonthly = salary / 12;
 
-  // --- Housing cost (Feature A: HOA folded directly into PITI) ---
+  // --- Housing cost (Allegheny County tax order of operations) ---
   const loanAmount = Math.max(0, homePrice - downAmt);
   const monthlyPI = monthlyPayment(loanAmount, rate, termYears);
 
   const muni = MILLAGE_DATA[muniIdx];
-  const totalMills = (muni ? muni.muniMills + muni.schoolMills : 0) + countyMillage;
-  const assessedValue = homePrice * ratio;
-  const annualPropertyTax = assessedValue * totalMills / 1000;
-  const monthlyPropertyTax = annualPropertyTax / 12;
+  const propertyTax = AlleghenyTax.annualPropertyTax({
+    assessedValue,
+    homesteadEnabled,
+    muniMills: muni ? muni.muniMills : 0,
+    schoolMills: muni ? muni.schoolMills : 0,
+    countyMills: countyMillage,
+  });
+  const monthlyPropertyTax = propertyTax.annualTax / 12;
+
+  const transfer = AlleghenyTax.transferTax({ price: homePrice, localRatePct: transferRate });
 
   const monthlyInsurance = insurance / 12;
   const downPct = homePrice > 0 ? downAmt / homePrice : 0;
@@ -239,7 +254,8 @@ function calculate() {
     salary, contrib401k, contribRoth, payrollInsurance, federalTax, ficaTax, paStateTax, localEIT,
     eitRatePct: eitRate * 100,
     totalTax, netAnnual, netMonthly, grossMonthly, otherExpenses, debtTotal, lifestyleTotal,
-    loanAmount, monthlyPI, muni, totalMills, assessedValue, annualPropertyTax, monthlyPropertyTax,
+    loanAmount, monthlyPI, muni, propertyTax, monthlyPropertyTax, transfer, transferRate, downAmt,
+    homesteadEnabled, assessedValue,
     monthlyInsurance, monthlyPMI, hoa, monthlyMaintenance, totalMonthlyHousing, downPct,
   });
 
@@ -285,10 +301,13 @@ function renderResults(r) {
   ).join("") + `<tr class="footnote"><td colspan="2">FICA, PA state, and local EIT are calculated on gross pay minus health insurance only — 401(k) contributions reduce federal tax but not those.</td></tr>`;
 
   const muniLabel = r.muni ? `${r.muni.muni} / ${r.muni.school}` : "—";
+  const homesteadNote = r.homesteadEnabled
+    ? ` after $${AlleghenyTax.HOMESTEAD_EXCLUSION.toLocaleString("en-US")} homestead`
+    : "";
   const houseRows = [
     ["Loan amount", fmtMoney(r.loanAmount)],
     ["Principal & interest", fmtMoney(r.monthlyPI)],
-    [`Property tax (${muniLabel}, ${r.totalMills.toFixed(2)} mills)`, fmtMoney(r.monthlyPropertyTax)],
+    [`Property tax (${muniLabel}, ${r.propertyTax.totalMills.toFixed(2)} mills on ${fmtMoney(r.propertyTax.taxableAssessed)}${homesteadNote})`, fmtMoney(r.monthlyPropertyTax)],
     ["Homeowners insurance", fmtMoney(r.monthlyInsurance)],
     ["PMI" + (r.downPct >= 0.20 ? " (n/a, ≥20% down)" : ""), fmtMoney(r.monthlyPMI)],
     ["HOA fees", fmtMoney(r.hoa)],
@@ -298,6 +317,11 @@ function renderResults(r) {
   document.getElementById("houseTable").innerHTML = houseRows.map((row, i) =>
     `<tr class="${i === houseRows.length - 1 ? 'total' : ''}"><td>${row[0]}</td><td>${row[1]}</td></tr>`
   ).join("");
+
+  document.getElementById("closingCosts").innerHTML = `
+    <p class="hint">One-time at closing: deed transfer tax ${fmtMoney(r.transfer.totalTax)}
+    (1% state ${fmtMoney(r.transfer.stateTax)} + ${r.transferRate}% local ${fmtMoney(r.transfer.localTax)})
+    &mdash; with your ${fmtMoney(r.downAmt)} down payment, roughly ${fmtMoney(r.transfer.totalTax + r.downAmt)} cash needed before other closing fees.</p>`;
 
   const netAfterAll = r.netMonthly - r.otherExpenses - r.totalMonthlyHousing;
   const pctOfGross = (r.totalMonthlyHousing + r.otherExpenses) / r.grossMonthly * 100;
@@ -360,7 +384,129 @@ function renderUnderwriting(grossMonthly, totalMonthlyHousing, debtTotal) {
   document.getElementById("qualifyBadge").innerHTML = badgeHtml;
 }
 
-// --- Monthly cash-flow projection + chart, with 3%/yr compounding ---
+// --- Comparable Sales: address -> parcel -> live WPRDC comp query ---
+function setCompsStatus(msg) {
+  document.getElementById("compsStatus").textContent = msg;
+}
+
+function switchToTab(tabName) {
+  document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tabName));
+  document.querySelectorAll(".tab-panel").forEach((p) => (p.style.display = "none"));
+  document.getElementById(`tab-${tabName}`).style.display = "";
+  if (tabName === "cashflow" && cashFlowChart) cashFlowChart.resize();
+}
+
+async function handleAddressResolved(resolved) {
+  const parcelInfoEl = document.getElementById("parcelInfo");
+  switchToTab("comps");
+  setCompsStatus("Looking up parcel in county records…");
+  document.getElementById("compsResults").style.display = "none";
+
+  let parcel;
+  try {
+    parcel = await WPRDC.findParcelByAddress({
+      houseNumber: resolved.houseNumber,
+      streetName: resolved.streetName,
+      zip: resolved.zip,
+    });
+  } catch (err) {
+    setCompsStatus(`Parcel lookup failed: ${err.message}`);
+    parcelInfoEl.textContent = "";
+    return;
+  }
+
+  targetParcel = parcel;
+
+  // Prefer the parcel centroid for distance math (parcel-to-parcel consistency with comps);
+  // fall back to Google's rooftop geometry if the centroid is missing.
+  const targetLat = parcel.lat !== null ? parcel.lat : resolved.lat;
+  const targetLon = parcel.lon !== null ? parcel.lon : resolved.lon;
+  if (targetLat === null || targetLon === null) {
+    setCompsStatus("Parcel found, but no coordinates available to run the 1-mile comp search.");
+    return;
+  }
+
+  // Auto-fill affordability inputs from the county record.
+  if (parcel.assessedValue) {
+    assessedSource = "parcel";
+    document.getElementById("assessedValue").value = Math.round(parcel.assessedValue).toLocaleString("en-US");
+    document.getElementById("assessedHint").textContent =
+      `actual county assessment for ${parcel.address} (LOCALTOTAL) — edit to override`;
+  }
+  if (parcel.sqft) document.getElementById("sqft").value = Math.round(parcel.sqft);
+  document.getElementById("transferRate").value = AlleghenyTax.defaultLocalTransferRate(parcel.municipality).toFixed(1);
+  const muniIdx = matchMuniIndex(parcel.municipality);
+  if (muniIdx >= 0) {
+    document.getElementById("muni").value = muniIdx;
+    updateEitFromMuni();
+  }
+  parcelInfoEl.textContent =
+    `Parcel ${parcel.parid} — ${parcel.address} (${parcel.municipality}, ${parcel.schoolDistrict} SD): ` +
+    `${parcel.bedrooms ?? "?"} bd / ${(parcel.fullBaths ?? 0) + 0.5 * (parcel.halfBaths ?? 0)} ba, ` +
+    `${parcel.sqft ? parcel.sqft.toLocaleString("en-US") : "?"} sq ft, assessed ${fmtMoney(parcel.assessedValue ?? 0)}.` +
+    (muniIdx < 0 ? ` NOTE: "${parcel.municipality}" is not in the millage table — pick the municipality manually for tax rates.` : "");
+
+  calculate();
+
+  // Live comp query: bounding box in SQL, strict haversine + district match client-side.
+  setCompsStatus(`Parcel found (${parcel.schoolDistrict} SD). Fetching recorded sales within 1 mile…`);
+  const box = CompEngine.boundingBox(targetLat, targetLon, 1.0);
+  const window_ = CompEngine.dateWindow(2);
+  let rows;
+  try {
+    rows = await WPRDC.fetchComps({
+      schoolCode: parcel.schoolCode,
+      minLat: box.minLat, maxLat: box.maxLat, minLon: box.minLon, maxLon: box.maxLon,
+      startDate: window_.startDate, endDate: window_.endDate,
+    });
+  } catch (err) {
+    setCompsStatus(`Comp query failed: ${err.message}`);
+    return;
+  }
+
+  const { comps, summary } = CompEngine.filterAndRank({
+    rows, targetLat, targetLon, targetParid: parcel.parid, radiusMiles: 1.0,
+  });
+
+  renderComps(parcel, comps, summary, window_);
+}
+
+function renderComps(parcel, comps, summary, window_) {
+  if (comps.length === 0) {
+    setCompsStatus(`No qualifying comps found within 1 mile in ${parcel.schoolDistrict} SD between ${window_.startDate} and ${window_.endDate}.`);
+    return;
+  }
+
+  setCompsStatus(
+    `${summary.count} recorded single-family sales within 1.0 mile, ${parcel.schoolDistrict} SD, ` +
+    `${window_.startDate} → ${window_.endDate} (farthest ${summary.maxDistance.toFixed(2)} mi).`
+  );
+  document.getElementById("compsResults").style.display = "";
+  document.getElementById("compCount").textContent = summary.count;
+  document.getElementById("compAvgPrice").textContent = fmtMoney(summary.avgPrice);
+  document.getElementById("compMedianPrice").textContent = fmtMoney(summary.medianPrice);
+  document.getElementById("compAvgPpsf").textContent = summary.avgPricePerSqft !== null
+    ? "$" + summary.avgPricePerSqft.toFixed(2) : "n/a";
+
+  document.getElementById("compsTableBody").innerHTML = comps.map((c) => {
+    const baths = (c.fullBaths ?? 0) + 0.5 * (c.halfBaths ?? 0);
+    const ppsf = c.sqft ? "$" + Math.round(c.price / c.sqft).toLocaleString("en-US") : "n/a";
+    return `<tr>
+      <td>${c.address}${c.municipality ? ` <span class="muted-inline">(${c.municipality})</span>` : ""}</td>
+      <td>${c.distanceDisplay.toFixed(2)}</td>
+      <td>${fmtMoney(c.price)}</td>
+      <td>${c.saleDate}</td>
+      <td>${c.bedrooms ?? "?"}/${baths || "?"}</td>
+      <td>${c.sqft ? c.sqft.toLocaleString("en-US") : "?"}</td>
+      <td>${ppsf}</td>
+    </tr>`;
+  }).join("");
+
+  document.getElementById("compDisclaimers").innerHTML =
+    CompEngine.DISCLAIMERS.map((d) => `<li>${d}</li>`).join("");
+}
+
+// --- Feature D: Monthly cash-flow projection + chart, with 3%/yr compounding ---
 // Compounds: net income, lifestyle expenses, maintenance, HOA, property tax.
 // Held flat: mortgage P&I, homeowners insurance, PMI, and debt obligations (which still
 // respect their own duration drop-off, just without growth applied to the dollar amount).
@@ -565,7 +711,7 @@ function populateLumpSumMonthDropdown(termYears) {
 
 function calculateAmortization() {
   if (!lastLoan) {
-    alert("Calculate the Affordability tab first so the loan amount, rate, and term are set.");
+    alert("Calculate first so the loan amount, rate, and term are set.");
     return;
   }
   const extraPayment = parseMoney("extraPayment");
@@ -598,7 +744,7 @@ function calculateAmortization() {
   document.getElementById("reforecastSummary").style.display = "none";
 }
 
-// --- Feature C: Reforecast engine (lump sum drop-in) ---
+// --- Reforecast engine (lump sum drop-in) ---
 function computeReforecast(loanAmount, annualRate, termYears, extraPayment, lumpSum, targetMonth, mode) {
   const monthlyRate = annualRate / 12;
   const basePayment = monthlyPayment(loanAmount, annualRate, termYears) + extraPayment;
@@ -644,7 +790,7 @@ function computeReforecast(loanAmount, annualRate, termYears, extraPayment, lump
 
 function runReforecast() {
   if (!lastLoan || !lastAmortStats) {
-    alert("Calculate the Affordability and Amortization tabs first.");
+    alert("Calculate and open the Amortization tab first.");
     return;
   }
   const { loanAmount, rate, termYears } = lastLoan;
@@ -666,18 +812,12 @@ function runReforecast() {
   renderAmortTable(result.months);
 }
 
-// --- Output tabs: Results & Underwriting / Amortization Schedule / 5-Year Cash Flow Outlook ---
+// --- Output tabs ---
 function setupTabs() {
   document.querySelectorAll(".tab-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
-      document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
-      btn.classList.add("active");
-      document.querySelectorAll(".tab-panel").forEach((p) => (p.style.display = "none"));
-      document.getElementById(`tab-${btn.dataset.tab}`).style.display = "";
+      switchToTab(btn.dataset.tab);
       if (btn.dataset.tab === "amort") calculateAmortization();
-      // Chart.js sizes itself off the canvas's container, which reports 0 height while
-      // its tab panel is display:none — resize once the panel becomes visible.
-      if (btn.dataset.tab === "cashflow" && cashFlowChart) cashFlowChart.resize();
     });
   });
 }
@@ -693,17 +833,7 @@ function updateEitFromMuni() {
 
 document.addEventListener("DOMContentLoaded", () => {
   wireMoneyInputs();
-  populateCountyDropdown();
-
-  const countySel = document.getElementById("county");
-  countySel.addEventListener("change", () => {
-    populateMuniDropdown(countySel.value);
-    applyCountyDefaults(countySel.value);
-    updateEitFromMuni();
-  });
-  countySel.value = "allegheny";
-  populateMuniDropdown("allegheny");
-  applyCountyDefaults("allegheny");
+  populateMuniDropdown();
   updateEitFromMuni();
 
   document.getElementById("muni").addEventListener("change", updateEitFromMuni);
@@ -716,7 +846,17 @@ document.addEventListener("DOMContentLoaded", () => {
     downPaymentSource = "amt";
     syncDownPayment("amt");
   });
-  document.getElementById("homePrice").addEventListener("input", () => syncDownPayment(downPaymentSource));
+  document.getElementById("homePrice").addEventListener("input", () => {
+    syncDownPayment(downPaymentSource);
+    syncAssessedEstimate();
+  });
+  document.getElementById("ratio").addEventListener("input", syncAssessedEstimate);
+  // A user typing directly in the assessed-value field takes ownership of it.
+  document.getElementById("assessedValue").addEventListener("input", () => {
+    assessedSource = "manual";
+    document.getElementById("assessedHint").textContent = "manually set — edit price/CLR will no longer overwrite this";
+  });
+
   document.getElementById("addDebtExpenseBtn").addEventListener("click", () => addExpenseRow("debtExpenseRows"));
   document.getElementById("addLifestyleExpenseBtn").addEventListener("click", () => addExpenseRow("lifestyleExpenseRows"));
   document.getElementById("calcBtn").addEventListener("click", calculate);
@@ -730,7 +870,14 @@ document.addEventListener("DOMContentLoaded", () => {
     }, 400);
   });
 
+  AddressSearch.init({
+    inputEl: document.getElementById("addressInput"),
+    statusEl: document.getElementById("addressStatus"),
+    onAddressResolved: handleAddressResolved,
+  });
+
   setupTabs();
   syncDownPayment("pct");
+  syncAssessedEstimate();
   calculate();
 });

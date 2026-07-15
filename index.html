@@ -2,19 +2,36 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Mortgage Affordability Calculator</title>
+<title>Allegheny County Mortgage & Comp Calculator</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
+<!--
+  GOOGLE PLACES AUTOCOMPLETE (optional but recommended):
+  Uncomment the script below and replace YOUR_API_KEY with a Google Cloud API key that has
+  the Places API enabled. Without it, the address bar falls back to manual entry resolved
+  against Allegheny County parcel records (still fully functional, just no autocomplete).
+
+  <script async defer src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY&libraries=places"></script>
+-->
 </head>
 <body>
 <div class="wrap">
   <h1>Mortgage Affordability Calculator</h1>
-  <p class="sub">Western PA — gross-to-net pay vs. estimated housing cost</p>
+  <p class="sub">Allegheny County, PA — live comps, local taxes, and gross-to-net affordability</p>
 
   <div class="split-layout">
     <div class="inputs-col">
+      <section class="card">
+        <h2>Property Address <span class="card-section-tag">Allegheny County</span></h2>
+        <label>Search address
+          <input type="text" id="addressInput" placeholder="e.g. 811 W Monroe Cir, Pittsburgh, PA 15229" autocomplete="off">
+        </label>
+        <p class="hint" id="addressStatus"></p>
+        <p class="hint" id="parcelInfo"></p>
+      </section>
+
       <section class="card">
         <h2>Income</h2>
         <label>Annual gross salary ($)
@@ -66,9 +83,6 @@
 
       <section class="card">
         <h2>Home & Mortgage</h2>
-        <label>County
-          <select id="county"></select>
-        </label>
         <label>Home price ($)
           <input type="text" class="money-input" id="homePrice" value="400,000">
         </label>
@@ -90,11 +104,19 @@
         <label>Municipality / School District
           <select id="muni"></select>
         </label>
-        <label>County millage (mills) <span class="hint" id="countyMillageHint">editable, current rate</span>
+        <label>County millage (mills) <span class="hint">Allegheny County baseline — editable</span>
           <input type="number" id="countyMillage" value="4.73" min="0" step="0.01">
         </label>
-        <label>Assessment ratio (%) <span class="hint" id="ratioHint">assessed value as % of market value — counties tax assessed value, not market value</span>
+        <label>Assessed value ($) <span class="hint" id="assessedHint">auto-estimated from price × Common Level Ratio; replaced with the actual county assessment when you search an address above</span>
+          <input type="text" class="money-input" id="assessedValue" value="208,000">
+        </label>
+        <label>Common Level Ratio (%) <span class="hint">used only to estimate assessed value when no parcel is selected (~52% as of 2025)</span>
           <input type="number" id="ratio" value="52" min="0.1" max="100" step="0.01">
+        </label>
+        <label class="checkbox-label"><input type="checkbox" id="homesteadToggle" checked> Apply Homestead Exclusion <span class="hint">$18,000 off assessed value for qualifying owner-occupied primary residences</span>
+        </label>
+        <label>Local transfer tax rate (%) <span class="hint">one-time deed transfer tax at closing, on top of the 1% PA state rate — 3% in the City of Pittsburgh, typically 1% elsewhere; auto-set from the searched address</span>
+          <input type="number" id="transferRate" value="1.0" min="0" step="0.1">
         </label>
         <label>Annual homeowners insurance ($) <span class="hint">default ~0.35% of home price</span>
           <input type="text" class="money-input" id="insurance" value="1,400">
@@ -105,7 +127,7 @@
         <label>HOA Fees (Monthly) ($)
           <input type="text" class="money-input" id="hoa" value="0">
         </label>
-        <label>Property Size (Sq Ft) <span class="hint">drives estimated maintenance cost at $1/sq ft/yr — folded into PITI + HOA</span>
+        <label>Property Size (Sq Ft) <span class="hint">drives estimated maintenance cost at $1/sq ft/yr — folded into PITI + HOA; auto-filled from county records when you search an address</span>
           <input type="number" id="sqft" value="2000" min="0" step="50">
         </label>
       </section>
@@ -116,8 +138,9 @@
     <div class="results-col">
       <div class="tabs">
         <button class="tab-btn active" data-tab="results">Results & Underwriting</button>
-        <button class="tab-btn" data-tab="amort">Amortization Schedule</button>
-        <button class="tab-btn" data-tab="cashflow">5-Year Cash Flow Outlook</button>
+        <button class="tab-btn" data-tab="amort">Amortization</button>
+        <button class="tab-btn" data-tab="cashflow">5-Year Cash Flow</button>
+        <button class="tab-btn" data-tab="comps">Comparable Sales</button>
       </div>
 
       <div class="tab-panel" id="tab-results">
@@ -137,6 +160,7 @@
             <div>
               <h3>Monthly Housing Cost</h3>
               <table id="houseTable"></table>
+              <div class="closing-costs" id="closingCosts"></div>
             </div>
           </div>
           <div class="verdict" id="verdict"></div>
@@ -218,6 +242,29 @@
           <div class="chart-wrap"><canvas id="cashFlowChart"></canvas></div>
         </section>
       </div>
+
+      <div class="tab-panel" id="tab-comps" style="display:none;">
+        <section class="card">
+          <h2>Comparable Sales <span class="card-section-tag">Live county records</span></h2>
+          <p class="hint">Recorded arm's-length single-family sales within 1.0 mile of the searched address, in the same school district, over the trailing 2 years. Search an address in the left panel to run.</p>
+          <p class="hint" id="compsStatus"></p>
+          <div class="results" id="compsResults" style="display:none;">
+            <div class="grid stats" id="compsStats">
+              <div class="stat stat-accent"><span class="stat-label">Comps Found</span><span class="stat-value" id="compCount"></span></div>
+              <div class="stat"><span class="stat-label">Average Price</span><span class="stat-value" id="compAvgPrice"></span></div>
+              <div class="stat"><span class="stat-label">Median Price</span><span class="stat-value" id="compMedianPrice"></span></div>
+              <div class="stat"><span class="stat-label">Avg $ / SqFt</span><span class="stat-value" id="compAvgPpsf"></span></div>
+            </div>
+            <table id="compsTable">
+              <thead>
+                <tr><th>Address</th><th>Dist (mi)</th><th>Price</th><th>Sale Date</th><th>Bd/Ba</th><th>SqFt</th><th>$/SqFt</th></tr>
+              </thead>
+              <tbody id="compsTableBody"></tbody>
+            </table>
+            <ul class="comp-disclaimers" id="compDisclaimers"></ul>
+          </div>
+        </section>
+      </div>
     </div>
   </div>
 
@@ -227,6 +274,10 @@
 </div>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="data.js"></script>
+<script src="tax.js"></script>
+<script src="comps.js"></script>
+<script src="wprdc.js"></script>
+<script src="places.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
