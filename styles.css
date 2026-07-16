@@ -121,18 +121,7 @@ label.checkbox-label { display: flex; align-items: center; gap: 8px; flex-wrap: 
 label.checkbox-label input { width: auto; margin: 0; }
 label.checkbox-label .hint { flex-basis: 100%; }
 
-#compsTable { table-layout: auto; margin-top: 16px; }
-#compsTable thead th {
-  text-align: left;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--nautical-muted);
-  padding: 6px 4px;
-  border-bottom: 2px solid var(--nautical-text);
-}
-#compsTable thead th:not(:first-child) { text-align: right; }
-#compsTable tbody td:not(:first-child) { text-align: right; white-space: nowrap; }
-#compsTable tbody td { font-size: 13px; }
+/* #compsTable styling now lives in comps-ui.css (sticky header, zebra, column alignment). */
 .muted-inline { color: var(--nautical-muted); font-size: 11px; }
 .comp-disclaimers { margin: 16px 0 0; padding-left: 18px; }
 .comp-disclaimers li { font-size: 11.5px; color: var(--nautical-muted); margin-bottom: 4px; line-height: 1.4; }

@@ -1,0 +1,108 @@
+/* Comparable Sales tab — filter panel + table readability (Nautical Minimalist tokens). */
+
+/* --- Filter control panel --- */
+.comp-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 12px;
+  padding: 12px 14px;
+  margin: 14px 0 4px;
+  background: var(--nautical-bg);
+  border: 1px solid var(--nautical-border);
+  border-radius: 8px;
+}
+.comp-filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--nautical-muted);
+  margin: 0;
+}
+.comp-filter-group select,
+.comp-filter-group input {
+  margin-top: 0;
+  padding: 6px 8px;
+  font-size: 13px;
+  width: auto;
+  min-width: 118px;
+  background: var(--nautical-surface);
+}
+.comp-filter-group input.comp-filter-sqft { width: 90px; min-width: 90px; }
+button.comp-filter-reset { margin: 0 0 1px auto; padding: 7px 14px; }
+
+/* --- Scroll container so the sticky header has a frame --- */
+.comps-scroll {
+  max-height: 520px;
+  overflow-y: auto;
+  margin-top: 12px;
+  border: 1px solid var(--nautical-border);
+  border-radius: 8px;
+}
+.comps-scroll::-webkit-scrollbar { width: 8px; }
+.comps-scroll::-webkit-scrollbar-thumb { background: var(--nautical-border); border-radius: 4px; }
+
+/* --- Table: sticky header, zebra rows, strict column alignment --- */
+/* border-collapse: separate is required — collapsed borders detach from sticky headers
+   while scrolling, so the header's bottom rule is drawn with box-shadow instead. */
+#compsTable {
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: auto;
+  margin-top: 0;
+  width: 100%;
+}
+#compsTable thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--nautical-surface);
+  box-shadow: inset 0 -2px 0 var(--nautical-text);
+  border-bottom: none;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--nautical-muted);
+  padding: 8px 10px;
+}
+#compsTable tbody td {
+  padding: 7px 10px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--nautical-border);
+}
+#compsTable tbody tr:last-child td { border-bottom: none; }
+#compsTable tbody tr:nth-child(even) { background: var(--nautical-bg); }
+#compsTable tbody tr:hover { background: var(--nautical-accent-soft); }
+
+/* Alignment contract: text left, numerics right (tabular), dates/beds-baths/distance centered. */
+#compsTable th.col-addr,  #compsTable td.col-addr  { text-align: left; }
+#compsTable th.col-price, #compsTable td.col-price,
+#compsTable th.col-sqft,  #compsTable td.col-sqft,
+#compsTable th.col-ppsf,  #compsTable td.col-ppsf  { text-align: right; }
+#compsTable td.col-price, #compsTable td.col-sqft, #compsTable td.col-ppsf {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+#compsTable th.col-dist,  #compsTable td.col-dist,
+#compsTable th.col-date,  #compsTable td.col-date,
+#compsTable th.col-bdba,  #compsTable td.col-bdba  { text-align: center; white-space: nowrap; }
+
+/* Typography hierarchy: bold sale price, muted municipality sub-label. */
+.price-strong { font-weight: 700; color: var(--nautical-text); }
+#compsTable .muted-inline { display: block; font-size: 11px; color: var(--nautical-muted); margin-top: 1px; }
+
+/* Zero-state row */
+#compsTable tr.no-comps-row td {
+  text-align: center;
+  padding: 28px 10px;
+  color: var(--nautical-muted);
+  font-size: 13px;
+  background: var(--nautical-surface);
+}
+
+@media (max-width: 700px) {
+  .comp-filter-group select, .comp-filter-group input { min-width: 96px; }
+  #compsTable thead th, #compsTable tbody td { padding: 6px 6px; }
+}

@@ -33,6 +33,11 @@ const CASH_FLOW_ANNUAL_GROWTH = 0.03; // 3%/yr compounding for income, lifestyle
 let targetParcel = null;
 let assessedSource = "estimate"; // 'estimate' (price x CLR) | 'parcel' (county record) | 'manual' (user-typed)
 
+// Comp state: `all` holds the raw fetched rows (with distances attached) — fetched ONCE per
+// address. Filter changes only re-derive from this array; they never re-query the API.
+// The derived filtered array is the single source of truth for BOTH the table and the KPIs.
+let compState = null; // { all, parcel, window }
+
 function bracketTax(taxableIncome, brackets) {
   let tax = 0;
   for (const [lo, hi, rate] of brackets) {
@@ -464,46 +469,63 @@ async function handleAddressResolved(resolved) {
     return;
   }
 
-  const { comps, summary } = CompEngine.filterAndRank({
+  const { comps } = CompEngine.filterAndRank({
     rows, targetLat, targetLon, targetParid: parcel.parid, radiusMiles: 1.0,
   });
 
-  renderComps(parcel, comps, summary, window_);
-}
+  // Store once; all subsequent filter interactions derive from this array with no re-fetch.
+  compState = { all: comps, parcel, window: window_ };
 
-function renderComps(parcel, comps, summary, window_) {
   if (comps.length === 0) {
     setCompsStatus(`No qualifying comps found within 1 mile in ${parcel.schoolDistrict} SD between ${window_.startDate} and ${window_.endDate}.`);
+    document.getElementById("compsResults").style.display = "none";
     return;
   }
 
-  setCompsStatus(
-    `${summary.count} recorded single-family sales within 1.0 mile, ${parcel.schoolDistrict} SD, ` +
-    `${window_.startDate} → ${window_.endDate} (farthest ${summary.maxDistance.toFixed(2)} mi).`
-  );
   document.getElementById("compsResults").style.display = "";
-  document.getElementById("compCount").textContent = summary.count;
-  document.getElementById("compAvgPrice").textContent = fmtMoney(summary.avgPrice);
-  document.getElementById("compMedianPrice").textContent = fmtMoney(summary.medianPrice);
-  document.getElementById("compAvgPpsf").textContent = summary.avgPricePerSqft !== null
-    ? "$" + summary.avgPricePerSqft.toFixed(2) : "n/a";
+  document.getElementById("compDisclaimers").innerHTML =
+    CompEngine.DISCLAIMERS.map((d) => `<li>${d}</li>`).join("");
+  applyCompFilters();
+}
 
-  document.getElementById("compsTableBody").innerHTML = comps.map((c) => {
+// Reactive re-derivation: one pass computes the filtered array, and BOTH the KPI cards and
+// the table rows render from that same array — they cannot fall out of sync.
+function applyCompFilters() {
+  if (!compState) return;
+  const filters = CompFilterPanel.getFilters();
+  const { filtered, summary } = CompFilters.apply({ rows: compState.all, filters });
+
+  const dash = "—";
+  document.getElementById("compCount").textContent = summary.count;
+  document.getElementById("compAvgPrice").textContent = summary.avgPrice !== null ? fmtMoney(summary.avgPrice) : dash;
+  document.getElementById("compMedianPrice").textContent = summary.medianPrice !== null ? fmtMoney(summary.medianPrice) : dash;
+  document.getElementById("compAvgPpsf").textContent = summary.avgPricePerSqft !== null
+    ? "$" + summary.avgPricePerSqft.toFixed(2) : dash;
+
+  setCompsStatus(
+    `Showing ${summary.count} of ${compState.all.length} recorded single-family sales — ` +
+    `${compState.parcel.schoolDistrict} SD, sorted most recent first.`
+  );
+
+  const tbody = document.getElementById("compsTableBody");
+  if (filtered.length === 0) {
+    tbody.innerHTML = `<tr class="no-comps-row"><td colspan="7">No matching comps found — try loosening the filters.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = filtered.map((c) => {
     const baths = (c.fullBaths ?? 0) + 0.5 * (c.halfBaths ?? 0);
     const ppsf = c.sqft ? "$" + Math.round(c.price / c.sqft).toLocaleString("en-US") : "n/a";
     return `<tr>
-      <td>${c.address}${c.municipality ? ` <span class="muted-inline">(${c.municipality})</span>` : ""}</td>
-      <td>${c.distanceDisplay.toFixed(2)}</td>
-      <td>${fmtMoney(c.price)}</td>
-      <td>${c.saleDate}</td>
-      <td>${c.bedrooms ?? "?"}/${baths || "?"}</td>
-      <td>${c.sqft ? c.sqft.toLocaleString("en-US") : "?"}</td>
-      <td>${ppsf}</td>
+      <td class="col-addr">${c.address}${c.municipality ? `<span class="muted-inline">${c.municipality}</span>` : ""}</td>
+      <td class="col-date">${c.saleDate}</td>
+      <td class="col-price"><span class="price-strong">${fmtMoney(c.price)}</span></td>
+      <td class="col-dist">${c.distanceDisplay.toFixed(2)}</td>
+      <td class="col-bdba">${c.bedrooms ?? "?"}/${baths || "?"}</td>
+      <td class="col-sqft">${c.sqft ? c.sqft.toLocaleString("en-US") : "?"}</td>
+      <td class="col-ppsf">${ppsf}</td>
     </tr>`;
   }).join("");
-
-  document.getElementById("compDisclaimers").innerHTML =
-    CompEngine.DISCLAIMERS.map((d) => `<li>${d}</li>`).join("");
 }
 
 // --- Feature D: Monthly cash-flow projection + chart, with 3%/yr compounding ---
@@ -874,6 +896,10 @@ document.addEventListener("DOMContentLoaded", () => {
     inputEl: document.getElementById("addressInput"),
     statusEl: document.getElementById("addressStatus"),
     onAddressResolved: handleAddressResolved,
+  });
+
+  CompFilterPanel.render(document.getElementById("compFilterPanel"), {
+    onChange: applyCompFilters,
   });
 
   setupTabs();

@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="comps-ui.css">
 <!--
   GOOGLE PLACES AUTOCOMPLETE (optional but recommended):
   Uncomment the script below and replace YOUR_API_KEY with a Google Cloud API key that has
@@ -255,12 +256,23 @@
               <div class="stat"><span class="stat-label">Median Price</span><span class="stat-value" id="compMedianPrice"></span></div>
               <div class="stat"><span class="stat-label">Avg $ / SqFt</span><span class="stat-value" id="compAvgPpsf"></span></div>
             </div>
-            <table id="compsTable">
-              <thead>
-                <tr><th>Address</th><th>Dist (mi)</th><th>Price</th><th>Sale Date</th><th>Bd/Ba</th><th>SqFt</th><th>$/SqFt</th></tr>
-              </thead>
-              <tbody id="compsTableBody"></tbody>
-            </table>
+            <div id="compFilterPanel"></div>
+            <div class="comps-scroll">
+              <table id="compsTable">
+                <thead>
+                  <tr>
+                    <th class="col-addr">Address</th>
+                    <th class="col-date">Sale Date</th>
+                    <th class="col-price">Price</th>
+                    <th class="col-dist">Dist (mi)</th>
+                    <th class="col-bdba">Bd/Ba</th>
+                    <th class="col-sqft">SqFt</th>
+                    <th class="col-ppsf">$/SqFt</th>
+                  </tr>
+                </thead>
+                <tbody id="compsTableBody"></tbody>
+              </table>
+            </div>
             <ul class="comp-disclaimers" id="compDisclaimers"></ul>
           </div>
         </section>
@@ -276,6 +288,8 @@
 <script src="data.js"></script>
 <script src="tax.js"></script>
 <script src="comps.js"></script>
+<script src="compfilters.js"></script>
+<script src="compfilters-ui.js"></script>
 <script src="wprdc.js"></script>
 <script src="places.js"></script>
 <script src="app.js"></script>
