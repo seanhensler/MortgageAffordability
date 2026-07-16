@@ -89,6 +89,18 @@ button.comp-filter-reset { margin: 0 0 1px auto; padding: 7px 14px; }
 #compsTable th.col-date,  #compsTable td.col-date,
 #compsTable th.col-bdba,  #compsTable td.col-bdba  { text-align: center; white-space: nowrap; }
 
+/* Address links: quiet at rest, clearly interactive on hover, opens Google Maps. */
+#compsTable a.addr-link {
+  color: var(--nautical-text);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--nautical-border);
+}
+#compsTable a.addr-link:hover,
+#compsTable a.addr-link:focus-visible {
+  color: #2E5E9E;
+  border-bottom: 1px solid #2E5E9E;
+}
+
 /* Typography hierarchy: bold sale price, muted municipality sub-label. */
 .price-strong { font-weight: 700; color: var(--nautical-text); }
 #compsTable .muted-inline { display: block; font-size: 11px; color: var(--nautical-muted); margin-top: 1px; }

@@ -8,14 +8,22 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 <link rel="stylesheet" href="comps-ui.css">
-<!--
-  GOOGLE PLACES AUTOCOMPLETE (optional but recommended):
-  Uncomment the script below and replace YOUR_API_KEY with a Google Cloud API key that has
-  the Places API enabled. Without it, the address bar falls back to manual entry resolved
-  against Allegheny County parcel records (still fully functional, just no autocomplete).
-
-  <script async defer src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY&libraries=places"></script>
--->
+<script>
+  // GOOGLE PLACES AUTOCOMPLETE (optional but recommended):
+  // Paste your Google Cloud API key (Places API + Maps JavaScript API enabled, restricted
+  // to your site's domain) between the quotes below — that's the only change needed.
+  // While empty, the address bar falls back to manual entry resolved against Allegheny
+  // County parcel records (fully functional, just no type-ahead).
+  const GOOGLE_MAPS_API_KEY = "";
+  if (GOOGLE_MAPS_API_KEY) {
+    const gmapsScript = document.createElement("script");
+    gmapsScript.src = "https://maps.googleapis.com/maps/api/js?key=" +
+      encodeURIComponent(GOOGLE_MAPS_API_KEY) + "&libraries=places";
+    gmapsScript.async = true;
+    gmapsScript.defer = true;
+    document.head.appendChild(gmapsScript);
+  }
+</script>
 </head>
 <body>
 <div class="wrap">

@@ -516,8 +516,11 @@ function applyCompFilters() {
   tbody.innerHTML = filtered.map((c) => {
     const baths = (c.fullBaths ?? 0) + 0.5 * (c.halfBaths ?? 0);
     const ppsf = c.sqft ? "$" + Math.round(c.price / c.sqft).toLocaleString("en-US") : "n/a";
+    // c.address already includes city/state/zip from county records, so encode it whole
+    // rather than appending "+Pittsburgh+PA" (which would duplicate the locality).
+    const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(c.address)}`;
     return `<tr>
-      <td class="col-addr">${c.address}${c.municipality ? `<span class="muted-inline">${c.municipality}</span>` : ""}</td>
+      <td class="col-addr"><a class="addr-link" href="${mapsUrl}" target="_blank" rel="noopener noreferrer">${c.address}</a>${c.municipality ? `<span class="muted-inline">${c.municipality}</span>` : ""}</td>
       <td class="col-date">${c.saleDate}</td>
       <td class="col-price"><span class="price-strong">${fmtMoney(c.price)}</span></td>
       <td class="col-dist">${c.distanceDisplay.toFixed(2)}</td>
