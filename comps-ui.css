@@ -74,7 +74,13 @@ button.comp-filter-reset { margin: 0 0 1px auto; padding: 7px 14px; }
 }
 #compsTable tbody tr:last-child td { border-bottom: none; }
 #compsTable tbody tr:nth-child(even) { background: var(--nautical-bg); }
-#compsTable tbody tr:hover { background: var(--nautical-accent-soft); }
+#compsTable tbody tr:hover,
+#compsTable tbody tr.row-active { background: var(--nautical-accent-soft); }
+#compsTable tbody tr.row-flash { animation: comp-row-flash 1.6s ease-out; }
+@keyframes comp-row-flash {
+  0%, 60% { background: rgba(217, 114, 44, 0.35); }
+  100% { background: transparent; }
+}
 
 /* Alignment contract: text left, numerics right (tabular), dates/beds-baths/distance centered. */
 #compsTable th.col-addr,  #compsTable td.col-addr  { text-align: left; }

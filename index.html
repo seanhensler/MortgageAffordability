@@ -8,6 +8,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 <link rel="stylesheet" href="comps-ui.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet-geosearch@3.11.1/dist/geosearch.css" />
+<link rel="stylesheet" href="compmap.css">
 <script>
   // GOOGLE PLACES AUTOCOMPLETE (optional but recommended):
   // Paste your Google Cloud API key (Places API + Maps JavaScript API enabled, restricted
@@ -257,6 +260,7 @@
           <h2>Comparable Sales <span class="card-section-tag">Live county records</span></h2>
           <p class="hint">Recorded arm's-length single-family sales within 1.0 mile of the searched address, in the same school district, over the trailing 2 years. Search an address in the left panel to run.</p>
           <p class="hint" id="compsStatus"></p>
+          <div id="compMap" class="cm-map-container"></div>
           <div class="results" id="compsResults" style="display:none;">
             <div class="grid stats" id="compsStats">
               <div class="stat stat-accent"><span class="stat-label">Comps Found</span><span class="stat-value" id="compCount"></span></div>
@@ -293,11 +297,15 @@
   </footer>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-geosearch@3.11.1/dist/geosearch.umd.js"></script>
 <script src="data.js"></script>
 <script src="tax.js"></script>
 <script src="comps.js"></script>
 <script src="compfilters.js"></script>
 <script src="compfilters-ui.js"></script>
+<script src="compmap.js"></script>
+<script src="compmap-interactions.js"></script>
 <script src="wprdc.js"></script>
 <script src="places.js"></script>
 <script src="app.js"></script>

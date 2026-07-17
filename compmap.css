@@ -1,0 +1,144 @@
+/* Comp Map — Leaflet map container + CSS-only marker pins (Nautical Minimalist tokens). */
+
+.cm-map-container {
+  height: 380px;
+  border: 1px solid var(--nautical-border);
+  border-radius: 8px;
+  margin-top: 12px;
+}
+
+/* Leaflet's own stylesheet sets a generic sans-serif; inherit the app's Inter stack instead. */
+.cm-map-container .leaflet-container {
+  font-family: var(--font-sans);
+  border-radius: 8px;
+  background: var(--nautical-bg);
+}
+
+/* --- Marker pins (L.divIcon, no external image assets) ---
+   The outer element (className 'cm-pin cm-pin-red' / 'cm-pin cm-pin-blue') is the exact div
+   Leaflet positions via an inline `transform: translate3d(...)` — see the long comment in
+   compmap.js's buildPinIcon(). We deliberately do NOT put any `transform` on that outer
+   element (it would either be silently overridden by Leaflet's inline style, or if forced
+   with !important, would destroy the positioning transform and the marker would jump to the
+   wrong pixel). The outer div stays a plain, transparent, correctly-sized hit target; the
+   actual pin graphic lives on an inner <span class="cm-pin-shape"> that's free to transition/
+   scale on hover/highlight without touching Leaflet's positioning. */
+.cm-pin {
+  background: transparent;
+  border: none;
+}
+
+.cm-pin-shape {
+  position: absolute;
+  left: 2px;
+  top: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 3px rgba(11, 37, 69, 0.45);
+  transition: transform 0.15s ease, filter 0.15s ease;
+  transform-origin: 50% 60%;
+}
+
+/* Downward-pointing triangle "tail" so the circle reads as a map pin, not just a dot. */
+.cm-pin-shape::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: 0;
+  height: 0;
+  margin-left: -5px;
+  margin-top: -4px;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 7px solid currentColor;
+}
+
+/* White center dot. */
+.cm-pin-dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  background: #ffffff;
+  border-radius: 50%;
+}
+
+.cm-pin-red .cm-pin-shape { background: #C0392B; color: #C0392B; }
+.cm-pin-blue .cm-pin-shape { background: #2E5E9E; color: #2E5E9E; }
+
+/* Target (search-center) pin is a larger variant of the same shape. */
+.cm-pin-target .cm-pin-shape {
+  width: 26px;
+  height: 26px;
+  left: 3px;
+  border-width: 3px;
+  box-shadow: 0 2px 5px rgba(11, 37, 69, 0.5);
+}
+.cm-pin-target .cm-pin-shape::after {
+  margin-left: -6px;
+  margin-top: -5px;
+  border-left-width: 6px;
+  border-right-width: 6px;
+  border-top-width: 9px;
+}
+.cm-pin-target .cm-pin-dot {
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+}
+
+/* Highlight state (CompMap.highlight): class is added to the OUTER element
+   (marker.getElement()) so JS only ever has one class name to toggle, but the visual
+   scale/shadow is expressed via this descendant selector targeting the inner shape —
+   see the note on .cm-pin above for why. z-index is safe to set directly on the outer
+   element (Leaflet doesn't fight over that property the way it does `transform`), and
+   !important beats Leaflet's own non-important inline z-index so the highlighted pin
+   reliably draws above its neighbors. */
+.cm-pin-highlight {
+  z-index: 10000 !important;
+}
+.cm-pin-highlight .cm-pin-shape {
+  transform: scale(1.35);
+  filter: drop-shadow(0 3px 6px rgba(11, 37, 69, 0.6));
+}
+
+/* --- Popups --- */
+.cm-popup {
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  color: var(--nautical-text);
+  line-height: 1.5;
+}
+.cm-popup-addr {
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+.cm-popup-row {
+  color: var(--nautical-muted);
+}
+.cm-popup-row:first-of-type {
+  color: var(--nautical-text);
+}
+
+/* --- Geosearch control bar (leaflet-geosearch's default markup, restyled to match tokens) --- */
+.cm-map-container .leaflet-control-geosearch form {
+  border-radius: 6px;
+  border: 1px solid var(--nautical-border);
+  background: var(--nautical-surface);
+}
+.cm-map-container .leaflet-control-geosearch form input {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--nautical-text);
+}
+.cm-map-container .leaflet-control-geosearch .results.active {
+  border: 1px solid var(--nautical-border);
+  border-radius: 6px;
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+}

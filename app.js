@@ -399,6 +399,8 @@ function switchToTab(tabName) {
   document.querySelectorAll(".tab-panel").forEach((p) => (p.style.display = "none"));
   document.getElementById(`tab-${tabName}`).style.display = "";
   if (tabName === "cashflow" && cashFlowChart) cashFlowChart.resize();
+  // Leaflet renders blank when initialized in a display:none container — recalc on reveal.
+  if (tabName === "comps") CompMap.invalidate();
 }
 
 async function handleAddressResolved(resolved) {
@@ -476,6 +478,8 @@ async function handleAddressResolved(resolved) {
   // Store once; all subsequent filter interactions derive from this array with no re-fetch.
   compState = { all: comps, parcel, window: window_ };
 
+  CompMap.setTarget({ lat: targetLat, lon: targetLon, label: parcel.address });
+
   if (comps.length === 0) {
     setCompsStatus(`No qualifying comps found within 1 mile in ${parcel.schoolDistrict} SD between ${window_.startDate} and ${window_.endDate}.`);
     document.getElementById("compsResults").style.display = "none";
@@ -507,6 +511,10 @@ function applyCompFilters() {
     `${compState.parcel.schoolDistrict} SD, sorted most recent first.`
   );
 
+  // The map mirrors the same filtered array that feeds the table and KPIs — including the
+  // zero-result case, where all blue markers are wiped and only the red target remains.
+  CompMap.renderComps(filtered);
+
   const tbody = document.getElementById("compsTableBody");
   if (filtered.length === 0) {
     tbody.innerHTML = `<tr class="no-comps-row"><td colspan="7">No matching comps found — try loosening the filters.</td></tr>`;
@@ -519,7 +527,7 @@ function applyCompFilters() {
     // c.address already includes city/state/zip from county records, so encode it whole
     // rather than appending "+Pittsburgh+PA" (which would duplicate the locality).
     const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(c.address)}`;
-    return `<tr>
+    return `<tr data-key="${c.parid}|${c.saleDate}">
       <td class="col-addr"><a class="addr-link" href="${mapsUrl}" target="_blank" rel="noopener noreferrer">${c.address}</a>${c.municipality ? `<span class="muted-inline">${c.municipality}</span>` : ""}</td>
       <td class="col-date">${c.saleDate}</td>
       <td class="col-price"><span class="price-strong">${fmtMoney(c.price)}</span></td>
@@ -904,6 +912,21 @@ document.addEventListener("DOMContentLoaded", () => {
   CompFilterPanel.render(document.getElementById("compFilterPanel"), {
     onChange: applyCompFilters,
   });
+
+  // Order matters: CompMap.init must precede CompInteractions.bind, because bind()
+  // registers its marker-click callback through the initialized map instance.
+  CompMap.init(document.getElementById("compMap"), {
+    onAddressPicked: (picked) => handleAddressResolved({
+      formattedAddress: picked.label,
+      lat: picked.lat,
+      lon: picked.lon,
+      houseNumber: picked.houseNumber,
+      streetName: picked.streetName,
+      zip: picked.zip,
+      source: "osm",
+    }),
+  });
+  CompInteractions.bind({ tbodyEl: document.getElementById("compsTableBody") });
 
   setupTabs();
   syncDownPayment("pct");
