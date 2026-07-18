@@ -1,144 +1,102 @@
 // ============================================================================
 // AddressSearch — self-contained address lookup module.
 //
-// INTEGRATION (add to index.html, before places.js, replacing YOUR_API_KEY):
+// Geocoding is done via the US Census Bureau Geocoder — a free, keyless public
+// API (no API key, no billing account required). Just include this file:
 //
-//   <script async defer src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY&libraries=places"></script>
 //   <script src="places.js"></script>
 //
-// No `callback=` query param is required on the Maps script tag. Because the
-// script loads async/defer, window.google.maps.places may not exist yet at
-// the moment AddressSearch.init() runs — init() polls briefly for readiness
-// (see waitForGoogle below) before falling back to manual entry. If the
-// <script> tag is omitted entirely (no API key available), AddressSearch
-// falls back to manual entry immediately once polling times out.
+// CENSUS GEOCODER:
+//   Endpoint:  https://geocoding.geo.census.gov/geocoder/locations/onelineaddress
+//   Params:    address=<the raw text the user typed, URL-encoded>
+//              benchmark=Public_AR_Current
+//              format=jsonp&callback=<generated>
+//   TRANSPORT IS JSONP, NOT fetch(): verified live 2026-07-17 that this endpoint
+//   sends NO Access-Control-Allow-Origin header (with or without an Origin on the
+//   request), so a browser fetch() always fails CORS. The Census geocoder
+//   officially supports format=jsonp&callback=, so the request is made by
+//   injecting a <script> tag (exempt from CORS, works from file:// too) whose
+//   response invokes a one-shot generated global callback. A 10s timer treats a
+//   slow/unreachable service as "no match"; the callback + tag are always
+//   cleaned up.
 //
-// BILLING NOTES (Google path only):
-//   - Autocomplete is restricted to fields: ['address_components', 'formatted_address', 'geometry']
-//     via the constructor options, so no extra (billable) fields are ever requested.
-//   - An AutocompleteSessionToken is created once per keystroke session and reused across
-//     every keystroke; a fresh token is generated immediately after each place_changed
-//     selection, per Google's session-based Autocomplete pricing model.
-//   - Predictions are biased/restricted to Allegheny County, PA via setBounds/strictBounds
-//     plus componentRestrictions: { country: 'us' }, cutting down irrelevant/out-of-area
-//     predictions (and re-queries) during typing.
+//   Response shape (relevant parts):
+//     {
+//       result: {
+//         addressMatches: [
+//           {
+//             matchedAddress: "811 W MONROE CIR, PITTSBURGH, PA, 15229",
+//             coordinates: { x: <longitude>, y: <latitude> },
+//             ...
+//           },
+//           ...
+//         ]
+//       }
+//     }
+//   Note coordinates.x is LONGITUDE and coordinates.y is LATITUDE (GeoJSON-style
+//   x/y ordering, not lat/lon ordering) — every access below is guarded since
+//   addressMatches may be missing, empty, or malformed.
 //
-// PUBLIC CONTRACT:
+//   The first match (addressMatches[0]) is used. Its lat/lon are sanity-checked
+//   against a generous Allegheny County, PA bounding box; a match outside that
+//   box is treated the same as "no match".
+//
+// PUBLIC CONTRACT (unchanged):
 //   AddressSearch.init({
 //     inputEl,            // <input type="text"> for the address
 //     statusEl,           // element to receive status/error text
 //     onAddressResolved,  // callback({ formattedAddress, lat, lon, houseNumber, streetName, zip, source })
 //   })
-//   source is 'google' when resolved via Places Autocomplete, 'manual' when resolved via the
-//   plain-text fallback parser (lat/lon are null in the manual case — a separate WPRDC module
-//   is expected to resolve coordinates from county parcel centroids).
+//
+//   A "Look up" button is always rendered after inputEl, and Enter on inputEl
+//   triggers the same lookup.
+//
+//   On a successful, in-county Census match:
+//     onAddressResolved({ formattedAddress: matchedAddress, lat, lon,
+//                          houseNumber, streetName, zip, source: 'census' })
+//     — houseNumber/streetName/zip come from parseManualAddress() run on the
+//     ORIGINAL typed input; they ride along as fallback-only fields even
+//     though the app resolves the parcel spatially from lat/lon in this case.
+//
+//   On no match, an out-of-county match, or a fetch/timeout failure:
+//     statusEl explains what happened, and — as long as the typed text still
+//     parses as a manual address — onAddressResolved is still called:
+//       onAddressResolved({ formattedAddress: <raw input>, lat: null, lon: null,
+//                            houseNumber, streetName, zip, source: 'manual' })
+//     app.js is expected to take it from there (Nominatim geocode, then a
+//     county text-match fallback). The callback is skipped only when
+//     parseManualAddress() also fails to make sense of the input, in which
+//     case statusEl shows a parse-error message instead.
 // ============================================================================
 
 const AddressSearch = (() => {
-  // Allegheny County, PA approximate bounding box.
-  const COUNTY_BOUNDS_SW = { lat: 40.19, lng: -80.36 };
-  const COUNTY_BOUNDS_NE = { lat: 40.67, lng: -79.69 };
-  const REQUIRED_COUNTY = "Allegheny County";
-  const REQUIRED_STATE_SHORT = "PA";
+  // Allegheny County, PA approximate bounding box — used only as a sanity
+  // check on Census results, not to restrict what the user can type.
+  const COUNTY_MIN_LAT = 40.19;
+  const COUNTY_MAX_LAT = 40.67;
+  const COUNTY_MIN_LON = -80.36;
+  const COUNTY_MAX_LON = -79.69;
 
-  const GOOGLE_POLL_INTERVAL_MS = 200;
-  const GOOGLE_POLL_TIMEOUT_MS = 2500;
+  const CENSUS_ENDPOINT = "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress";
+  const CENSUS_BENCHMARK = "Public_AR_Current";
+  const FETCH_TIMEOUT_MS = 10000;
 
-  let googleAutocomplete = null;
-  let googleSessionToken = null;
-
-  function isGoogleReady() {
-    return !!(window.google && window.google.maps && window.google.maps.places && window.google.maps.places.Autocomplete);
+  function isWithinCounty(lat, lon) {
+    return (
+      typeof lat === "number" &&
+      typeof lon === "number" &&
+      lat >= COUNTY_MIN_LAT &&
+      lat <= COUNTY_MAX_LAT &&
+      lon >= COUNTY_MIN_LON &&
+      lon <= COUNTY_MAX_LON
+    );
   }
 
-  // Polls briefly for the async/defer Maps script to finish loading before deciding
-  // whether to wire up Google Autocomplete or fall back to manual entry.
-  function waitForGoogle(onReady, onTimeout) {
-    if (isGoogleReady()) {
-      onReady();
-      return;
-    }
-    const start = Date.now();
-    const timer = setInterval(() => {
-      if (isGoogleReady()) {
-        clearInterval(timer);
-        onReady();
-      } else if (Date.now() - start > GOOGLE_POLL_TIMEOUT_MS) {
-        clearInterval(timer);
-        onTimeout();
-      }
-    }, GOOGLE_POLL_INTERVAL_MS);
-  }
-
-  // --- address_components helpers ---
-  function getComponent(components, type, useShortName) {
-    const match = (components || []).find((c) => c.types && c.types.includes(type));
-    if (!match) return "";
-    return useShortName ? match.short_name : match.long_name;
-  }
-
-  function setupGoogleAutocomplete(config) {
-    const { inputEl, statusEl, onAddressResolved } = config;
-    const bounds = new google.maps.LatLngBounds(COUNTY_BOUNDS_SW, COUNTY_BOUNDS_NE);
-    googleSessionToken = new google.maps.places.AutocompleteSessionToken();
-
-    googleAutocomplete = new google.maps.places.Autocomplete(inputEl, {
-      fields: ["address_components", "formatted_address", "geometry"], // billing: minimum fields only
-      sessionToken: googleSessionToken,
-      bounds,
-      strictBounds: true, // hard geofence to the Allegheny County box, not just a soft bias
-      componentRestrictions: { country: "us" },
-    });
-
-    statusEl.textContent = "Start typing an address (Allegheny County, PA only).";
-
-    googleAutocomplete.addListener("place_changed", () => {
-      const place = googleAutocomplete.getPlace();
-
-      if (!place || !place.geometry || !place.geometry.location) {
-        statusEl.textContent = "No details available for that selection — try again.";
-        regenerateSessionToken();
-        return;
-      }
-
-      const components = place.address_components;
-      const county = getComponent(components, "administrative_area_level_2", false);
-      const stateShort = getComponent(components, "administrative_area_level_1", true);
-
-      if (county !== REQUIRED_COUNTY || stateShort !== REQUIRED_STATE_SHORT) {
-        statusEl.textContent = `That address is outside Allegheny County, PA (got: ${county || "unknown county"}, ${stateShort || "unknown state"}). Please choose an in-county address.`;
-        regenerateSessionToken();
-        return; // guard: do not fire onAddressResolved for out-of-county selections
-      }
-
-      const houseNumber = getComponent(components, "street_number", false);
-      const streetName = getComponent(components, "route", false);
-      const zip = getComponent(components, "postal_code", false);
-
-      statusEl.textContent = `Resolved: ${place.formatted_address}`;
-
-      onAddressResolved({
-        formattedAddress: place.formatted_address,
-        lat: place.geometry.location.lat(),
-        lon: place.geometry.location.lng(),
-        houseNumber,
-        streetName,
-        zip,
-        source: "google",
-      });
-
-      regenerateSessionToken();
-    });
-  }
-
-  function regenerateSessionToken() {
-    googleSessionToken = new google.maps.places.AutocompleteSessionToken();
-    if (googleAutocomplete) googleAutocomplete.set("sessionToken", googleSessionToken);
-  }
-
-  // --- Manual fallback ---
+  // --- Manual address parser ---
   // Parses forms like "811 W Monroe Cir, Pittsburgh, PA 15229". Directionals (N/S/E/W) are
   // kept as part of streetName. Zip is optional and only extracted, never required.
+  // Used both as the last-resort fallback (when Census can't resolve an address) and to
+  // populate the fallback-only houseNumber/streetName/zip fields even on a Census success.
   function parseManualAddress(raw) {
     const trimmed = (raw || "").trim();
     if (!trimmed) return null;
@@ -164,29 +122,115 @@ const AddressSearch = (() => {
     return { houseNumber, streetName, zip };
   }
 
-  function setupManualFallback(config) {
+  // --- Census geocoder lookup (JSONP transport — see header for why not fetch) ---
+  // Resolves to { lat, lon, matchedAddress } or null. Never rejects: timeout, script
+  // load failure, and malformed payloads all resolve null so the caller's fallback
+  // chain runs. The generated callback is one-shot and both it and the <script> tag
+  // are removed on every exit path.
+  function fetchCensusMatch(rawAddress) {
+    return new Promise((resolve) => {
+      const cbName = "__censusJsonp" + Date.now() + "_" + Math.floor(Math.random() * 1e6);
+      const script = document.createElement("script");
+      let settled = false;
+
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        try { delete window[cbName]; } catch (_) { window[cbName] = undefined; }
+        if (script.parentNode) script.parentNode.removeChild(script);
+        resolve(value);
+      };
+
+      const timer = setTimeout(() => finish(null), FETCH_TIMEOUT_MS);
+
+      window[cbName] = (data) => {
+        const matches =
+          data && data.result && Array.isArray(data.result.addressMatches) ? data.result.addressMatches : [];
+        if (matches.length === 0) return finish(null);
+
+        const best = matches[0];
+        const coordinates = best && best.coordinates ? best.coordinates : null;
+        const lat = coordinates && typeof coordinates.y === "number" ? coordinates.y : null;
+        const lon = coordinates && typeof coordinates.x === "number" ? coordinates.x : null;
+        const matchedAddress = best && typeof best.matchedAddress === "string" ? best.matchedAddress : "";
+
+        if (lat === null || lon === null || !matchedAddress) return finish(null);
+        finish({ lat, lon, matchedAddress });
+      };
+
+      script.src =
+        CENSUS_ENDPOINT +
+        "?address=" +
+        encodeURIComponent(rawAddress) +
+        "&benchmark=" +
+        encodeURIComponent(CENSUS_BENCHMARK) +
+        "&format=jsonp&callback=" +
+        cbName;
+      script.onerror = () => finish(null);
+      document.head.appendChild(script);
+    });
+  }
+
+  function setupLookup(config) {
     const { inputEl, statusEl, onAddressResolved } = config;
 
-    statusEl.textContent = "Google autocomplete is not configured — type a full address and press Enter or Look up. County-records lookup will resolve the parcel location.";
+    statusEl.textContent =
+      "Type a full address and press Enter or Look up — resolved via the free US Census geocoder.";
 
     const lookupBtn = document.createElement("button");
     lookupBtn.type = "button";
     lookupBtn.textContent = "Look up";
-    lookupBtn.className = "secondary-btn";
-    lookupBtn.style.marginLeft = "8px";
+    lookupBtn.className = "lookup-btn";
     if (inputEl.parentNode) inputEl.parentNode.insertBefore(lookupBtn, inputEl.nextSibling);
 
-    const runLookup = () => {
-      const parsed = parseManualAddress(inputEl.value);
+    let lookupInFlight = false;
+
+    const runLookup = async () => {
+      if (lookupInFlight) return;
+
+      const raw = inputEl.value;
+      const trimmed = (raw || "").trim();
+      if (!trimmed) {
+        statusEl.textContent = "Enter an address first.";
+        return;
+      }
+
+      const parsed = parseManualAddress(trimmed);
+
+      lookupInFlight = true;
+      statusEl.textContent = "Looking up address via US Census geocoder…";
+
+      const match = await fetchCensusMatch(trimmed);
+      lookupInFlight = false;
+
+      if (match && isWithinCounty(match.lat, match.lon)) {
+        statusEl.textContent = `Census match: ${match.matchedAddress}`;
+        onAddressResolved({
+          formattedAddress: match.matchedAddress,
+          lat: match.lat,
+          lon: match.lon,
+          houseNumber: parsed ? parsed.houseNumber : "",
+          streetName: parsed ? parsed.streetName : "",
+          zip: parsed ? parsed.zip : "",
+          source: "census",
+        });
+        return;
+      }
+
+      if (match && !isWithinCounty(match.lat, match.lon)) {
+        statusEl.textContent = "That address appears to be outside Allegheny County — trying map geocoder + county records…";
+      } else {
+        statusEl.textContent = "Census geocoder found no match — trying map geocoder + county records…";
+      }
+
       if (!parsed) {
         statusEl.textContent = 'Could not parse that address — try a format like "811 W Monroe Cir, Pittsburgh, PA 15229".';
         return;
       }
 
-      statusEl.textContent = `Using manual entry: ${parsed.houseNumber} ${parsed.streetName}${parsed.zip ? ", " + parsed.zip : ""} — resolving location from county records.`;
-
       onAddressResolved({
-        formattedAddress: inputEl.value.trim(),
+        formattedAddress: trimmed,
         lat: null,
         lon: null,
         houseNumber: parsed.houseNumber,
@@ -210,10 +254,7 @@ const AddressSearch = (() => {
       throw new Error("AddressSearch.init requires inputEl, statusEl, and onAddressResolved");
     }
 
-    waitForGoogle(
-      () => setupGoogleAutocomplete(config),
-      () => setupManualFallback(config)
-    );
+    setupLookup(config);
   }
 
   return { init };

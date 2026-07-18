@@ -1,5 +1,5 @@
 // Comp Map — renders the same filtered comps array (see comps.js / app.js compState) onto a
-// Leaflet map: one red target marker + 1-mile radius circle, one blue marker per comp.
+// Leaflet map: one red target marker + 1-mile radius circle, one emerald green marker per comp.
 // No fetch, no filtering logic here — purely a rendering + interaction layer that mirrors
 // whatever array app.js hands it. Global `CompMap` object (IIFE), matches app.js code style.
 //
@@ -18,7 +18,7 @@ const CompMap = (() => {
   const ALLEGHENY_VIEWBOX = "-80.35,40.19,-79.68,40.68";
 
   let map = null;
-  let compLayerGroup = null; // single L.layerGroup for all blue comp markers — clearLayers()
+  let compLayerGroup = null; // single L.layerGroup for all green comp markers — clearLayers()
                               // drops markers AND their listeners together (no leak on re-render)
   let targetMarker = null;
   let targetCircle = null;
@@ -49,7 +49,7 @@ const CompMap = (() => {
   // that same element would be silently beaten by Leaflet's inline style, so rotating/scaling
   // that outer div via CSS is unsafe (it would either no-op or, if forced with !important,
   // wipe out Leaflet's positioning transform and the marker would jump to the wrong pixel).
-  // So the outer div (className below, exactly 'cm-pin cm-pin-red'/'cm-pin cm-pin-blue' per
+  // So the outer div (className below, exactly 'cm-pin cm-pin-red'/'cm-pin cm-pin-green' per
   // spec) stays untransformed and is used only as Leaflet's positioning anchor + a class hook;
   // the actual visual pin (circle + pointer + dot) is drawn on an INNER <span class="cm-pin-shape">
   // that highlight() scales via a descendant selector (.cm-pin-highlight .cm-pin-shape) in
@@ -123,20 +123,70 @@ const CompMap = (() => {
     };
   }
 
+  // Single provider instance shared by the map search bar and CompMap.geocode(), so both
+  // paths carry identical county bounding/params. Created lazily — geocode() must work even
+  // if it is called before (or without) map init.
+  let geosearchProvider = null;
+
+  function getProvider() {
+    if (typeof window.GeoSearch === "undefined") return null;
+    if (!geosearchProvider) {
+      geosearchProvider = new GeoSearch.OpenStreetMapProvider({
+        params: {
+          viewbox: ALLEGHENY_VIEWBOX,
+          bounded: 1,
+          countrycodes: "us",
+          addressdetails: 1,
+        },
+      });
+    }
+    return geosearchProvider;
+  }
+
+  // Normalizes a leaflet-geosearch result (`loc.x` = longitude, `loc.y` = latitude) into the
+  // pick object consumed by app.js, or null if the result fails the Allegheny County guard.
+  function parsePick(loc) {
+    loc = loc || {};
+    const label = loc.label || "";
+    const details = parseFromAddressDetails(loc.raw || {});
+    const fallback = parseFromLabel(label);
+    const county = details.county || fallback.county || "";
+
+    // Belt-and-suspenders on top of the viewbox/bounded params: Nominatim's bounding box
+    // can still admit results right at the county line, so double check the county field.
+    if (county && county.indexOf("Allegheny") === -1) return null;
+
+    return {
+      lat: loc.y,
+      lon: loc.x,
+      label,
+      houseNumber: details.houseNumber || fallback.houseNumber,
+      streetName: details.streetName || fallback.streetName,
+      zip: details.zip || fallback.zip,
+    };
+  }
+
+  // Programmatic geocode through the same bounded provider as the search bar, so a typed
+  // address in the left panel drives the identical spatial pipeline as a map-bar selection.
+  // Resolves to a pick object ({ lat, lon, label, houseNumber, streetName, zip }) or null
+  // when nothing matched inside the county viewbox.
+  async function geocode(query) {
+    const provider = getProvider();
+    if (!provider) {
+      console.warn("CompMap.geocode: window.GeoSearch not loaded — cannot geocode.");
+      return null;
+    }
+    const results = await provider.search({ query });
+    if (!results || results.length === 0) return null;
+    return parsePick(results[0]);
+  }
+
   function wireGeosearch(opts) {
-    if (typeof window.GeoSearch === "undefined") {
+    const provider = getProvider();
+    if (!provider) {
       console.warn("CompMap.init: window.GeoSearch not found — address search control skipped (map still functional).");
       return;
     }
-
-    const provider = new GeoSearch.OpenStreetMapProvider({
-      params: {
-        viewbox: ALLEGHENY_VIEWBOX,
-        bounded: 1,
-        countrycodes: "us",
-        addressdetails: 1,
-      },
-    });
 
     // autoComplete: false — Nominatim's usage policy prohibits per-keystroke autocomplete
     // queries; search fires only when the user submits.
@@ -152,32 +202,32 @@ const CompMap = (() => {
     });
     map.addControl(searchControl);
 
-    map.on("geosearch/showlocation", (e) => {
-      const loc = e.location || {};
-      const lat = loc.y;
-      const lon = loc.x;
-      const label = loc.label || "";
-      const raw = loc.raw || {};
-      const details = parseFromAddressDetails(raw);
-      const fallback = parseFromLabel(label);
-      const county = details.county || fallback.county || "";
+    // UPSTREAM BUG SHIM (leaflet-geosearch ≤4.2.0): the control only constructs its internal
+    // resultList when autoComplete is true, but onSubmit unconditionally calls
+    // this.resultList.clear() — so with autoComplete: false (required by Nominatim's no-
+    // autocomplete usage policy) every bar submit throws before the provider is queried.
+    // An inert stub satisfies onSubmit; the remaining resultList call sites are either
+    // autoComplete-guarded or no-op safely against these defaults.
+    if (!searchControl.resultList) {
+      searchControl.resultList = {
+        clear() {},
+        render() {},
+        count() { return 0; },
+        select() { return { label: "" }; },
+        selected: -1,
+      };
+    }
 
-      // Belt-and-suspenders on top of the viewbox/bounded params: Nominatim's bounding box
-      // can still admit results right at the county line, so double check the county field.
-      if (county && county.indexOf("Allegheny") === -1) {
-        console.warn(`CompMap: geosearch result outside Allegheny County ("${county}") — ignored.`);
+    // The geocoded result object (precise loc.x/loc.y) is captured here and carried through
+    // parsePick untouched — no re-parsing of the typed text ever happens on this path.
+    map.on("geosearch/showlocation", (e) => {
+      const picked = parsePick(e.location);
+      if (!picked) {
+        console.warn("CompMap: geosearch result outside Allegheny County — ignored.");
         return;
       }
-
       if (typeof opts.onAddressPicked === "function") {
-        opts.onAddressPicked({
-          lat,
-          lon,
-          label,
-          houseNumber: details.houseNumber || fallback.houseNumber,
-          streetName: details.streetName || fallback.streetName,
-          zip: details.zip || fallback.zip,
-        });
+        opts.onAddressPicked(picked);
       }
     });
   }
@@ -224,10 +274,10 @@ const CompMap = (() => {
 
     targetCircle = L.circle(latlng, {
       radius: RADIUS_METERS,
-      color: "#C0392B",
+      color: "#DC2626",
       weight: 1.5,
       dashArray: "6 6",
-      fillColor: "#C0392B",
+      fillColor: "#DC2626",
       fillOpacity: 0.05,
       interactive: false,
     }).addTo(map);
@@ -247,7 +297,7 @@ const CompMap = (() => {
     rows.forEach((row) => {
       if (typeof row.lat !== "number" || typeof row.lon !== "number") return;
       const key = keyFor(row);
-      const marker = L.marker([row.lat, row.lon], { icon: buildPinIcon("blue") });
+      const marker = L.marker([row.lat, row.lon], { icon: buildPinIcon("green") });
       marker.bindPopup(compPopupHtml(row));
       marker.on("click", () => {
         clickCallbacks.forEach((cb) => {
@@ -297,5 +347,5 @@ const CompMap = (() => {
     map.invalidateSize();
   }
 
-  return { init, setTarget, renderComps, highlight, onMarkerClick, invalidate };
+  return { init, setTarget, renderComps, highlight, onMarkerClick, invalidate, geocode };
 })();

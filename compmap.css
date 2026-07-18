@@ -15,7 +15,7 @@
 }
 
 /* --- Marker pins (L.divIcon, no external image assets) ---
-   The outer element (className 'cm-pin cm-pin-red' / 'cm-pin cm-pin-blue') is the exact div
+   The outer element (className 'cm-pin cm-pin-red' / 'cm-pin cm-pin-green') is the exact div
    Leaflet positions via an inline `transform: translate3d(...)` — see the long comment in
    compmap.js's buildPinIcon(). We deliberately do NOT put any `transform` on that outer
    element (it would either be silently overridden by Leaflet's inline style, or if forced
@@ -36,7 +36,7 @@
   height: 20px;
   border-radius: 50%;
   border: 2px solid #ffffff;
-  box-shadow: 0 1px 3px rgba(11, 37, 69, 0.45);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.45);
   transition: transform 0.15s ease, filter 0.15s ease;
   transform-origin: 50% 60%;
 }
@@ -68,8 +68,8 @@
   border-radius: 50%;
 }
 
-.cm-pin-red .cm-pin-shape { background: #C0392B; color: #C0392B; }
-.cm-pin-blue .cm-pin-shape { background: #2E5E9E; color: #2E5E9E; }
+.cm-pin-red .cm-pin-shape { background: #DC2626; color: #DC2626; }
+.cm-pin-green .cm-pin-shape { background: #059669; color: #059669; }
 
 /* Target (search-center) pin is a larger variant of the same shape. */
 .cm-pin-target .cm-pin-shape {
@@ -77,7 +77,7 @@
   height: 26px;
   left: 3px;
   border-width: 3px;
-  box-shadow: 0 2px 5px rgba(11, 37, 69, 0.5);
+  box-shadow: 0 2px 5px rgba(15, 23, 42, 0.5);
 }
 .cm-pin-target .cm-pin-shape::after {
   margin-left: -6px;
@@ -104,7 +104,7 @@
 }
 .cm-pin-highlight .cm-pin-shape {
   transform: scale(1.35);
-  filter: drop-shadow(0 3px 6px rgba(11, 37, 69, 0.6));
+  filter: drop-shadow(0 3px 6px rgba(15, 23, 42, 0.6));
 }
 
 /* --- Popups --- */

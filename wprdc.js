@@ -1,6 +1,7 @@
 // wprdc.js — WPRDC (Western Pennsylvania Regional Data Center) fetch & query module.
-// Exposes a global `WPRDC` object with two async methods:
-//   WPRDC.findParcelByAddress({ houseNumber, streetName, zip })
+// Exposes a global `WPRDC` object with three async methods:
+//   WPRDC.findParcelByPoint({ lat, lon })            — spatial-first (preferred) parcel resolution
+//   WPRDC.findParcelByAddress({ houseNumber, streetName, zip }) — text-match last resort
 //   WPRDC.fetchComps({ schoolCode, minLat, maxLat, minLon, maxLon, startDate, endDate })
 //
 // CKAN datastore_search_sql API against data.wprdc.org (CORS enabled, Access-Control-Allow-Origin: *).
@@ -140,6 +141,33 @@ const WPRDC = (() => {
     return { full, relaxed, directional };
   }
 
+  // Columns shared by both parcel resolvers (a = assessments, c = centroids).
+  const PARCEL_SELECT_COLS = `a."PARID", a."PROPERTYHOUSENUM", a."PROPERTYADDRESS", a."PROPERTYCITY", a."PROPERTYZIP",
+       a."MUNICODE", a."MUNIDESC", a."SCHOOLCODE", a."SCHOOLDESC", a."BEDROOMS", a."FULLBATHS",
+       a."HALFBATHS", a."FINISHEDLIVINGAREA", a."YEARBLT", a."USEDESC", a."LOCALTOTAL",
+       a."COUNTYTOTAL", a."FAIRMARKETTOTAL", c."LAT", c."LONG"`;
+
+  function mapParcelRow(r) {
+    return {
+      parid: trimField(r.PARID),
+      address: `${trimField(r.PROPERTYHOUSENUM)} ${trimField(r.PROPERTYADDRESS)}`.trim(),
+      municipality: trimField(r.MUNIDESC),
+      muniCode: trimField(r.MUNICODE),
+      schoolCode: trimField(r.SCHOOLCODE),
+      schoolDistrict: trimField(r.SCHOOLDESC),
+      bedrooms: intNum(r.BEDROOMS),
+      fullBaths: intNum(r.FULLBATHS),
+      halfBaths: intNum(r.HALFBATHS),
+      sqft: num(r.FINISHEDLIVINGAREA),
+      yearBuilt: intNum(r.YEARBLT),
+      useDesc: trimField(r.USEDESC),
+      assessedValue: num(r.LOCALTOTAL),
+      fairMarketValue: num(r.FAIRMARKETTOTAL),
+      lat: num(r.LAT),
+      lon: num(r.LONG),
+    };
+  }
+
   // --- WPRDC.findParcelByAddress ---
   async function findParcelByAddress({ houseNumber, streetName, zip } = {}) {
     if (!houseNumber || !streetName) {
@@ -149,10 +177,7 @@ const WPRDC = (() => {
     const { full, relaxed, directional } = parseStreet(streetName);
     const zipClause = zip ? ` AND a."PROPERTYZIP" = '${sqlEscape(String(zip).trim())}'` : "";
 
-    const selectCols = `a."PARID", a."PROPERTYHOUSENUM", a."PROPERTYADDRESS", a."PROPERTYCITY", a."PROPERTYZIP",
-       a."MUNICODE", a."MUNIDESC", a."SCHOOLCODE", a."SCHOOLDESC", a."BEDROOMS", a."FULLBATHS",
-       a."HALFBATHS", a."FINISHEDLIVINGAREA", a."YEARBLT", a."USEDESC", a."LOCALTOTAL",
-       a."COUNTYTOTAL", a."FAIRMARKETTOTAL", c."LAT", c."LONG"`;
+    const selectCols = PARCEL_SELECT_COLS;
     const fromJoin = `FROM "${RESOURCE_ASSESSMENTS}" a
 LEFT JOIN "${RESOURCE_CENTROIDS}" c ON a."PARID" = c."PIN"`;
 
@@ -195,25 +220,51 @@ WHERE a."PROPERTYHOUSENUM" = '${house}' AND a."PROPERTYADDRESS" LIKE '%${sqlEsca
       );
     }
 
-    const r = rows[0];
-    return {
-      parid: trimField(r.PARID),
-      address: `${trimField(r.PROPERTYHOUSENUM)} ${trimField(r.PROPERTYADDRESS)}`.trim(),
-      municipality: trimField(r.MUNIDESC),
-      muniCode: trimField(r.MUNICODE),
-      schoolCode: trimField(r.SCHOOLCODE),
-      schoolDistrict: trimField(r.SCHOOLDESC),
-      bedrooms: intNum(r.BEDROOMS),
-      fullBaths: intNum(r.FULLBATHS),
-      halfBaths: intNum(r.HALFBATHS),
-      sqft: num(r.FINISHEDLIVINGAREA),
-      yearBuilt: intNum(r.YEARBLT),
-      useDesc: trimField(r.USEDESC),
-      assessedValue: num(r.LOCALTOTAL),
-      fairMarketValue: num(r.FAIRMARKETTOTAL),
-      lat: num(r.LAT),
-      lon: num(r.LONG),
-    };
+    return mapParcelRow(rows[0]);
+  }
+
+  // --- WPRDC.findParcelByPoint ---
+  // Spatial-first parcel resolution: identifies the host parcel from geocoded lat/lon by
+  // querying parcel centroids in an expanding bounding box and taking the nearest centroid.
+  // Immune to street-string drift that breaks text matching — county records abbreviate
+  // ("WASHINGTON BLVD" vs Nominatim's "Washington Boulevard") and sometimes file a parcel
+  // under a different street entirely (verified live 2026-07-17: 1400 Washington Blvd,
+  // Pittsburgh 15206 geocodes onto parcel 0124F00248000000, recorded as "0 ORPHAN ST").
+  // Expansion tiers: ±0.0002° (~70 ft) covers typical rooftop-to-centroid offsets; large
+  // parcels park their centroid much farther from the rooftop (the 1400 Washington Blvd
+  // parcel needed ±0.001°), hence the wider tiers. Nearest-centroid is a proxy for true
+  // point-in-polygon (datastore_search_sql has no geometry ops) — the small starting box
+  // minimizes the chance a neighboring parcel's centroid outranks the host's.
+  const POINT_DELTAS = [0.0002, 0.0005, 0.001, 0.002];
+
+  async function findParcelByPoint({ lat, lon } = {}) {
+    const latN = Number(lat);
+    const lonN = Number(lon);
+    if (!Number.isFinite(latN) || !Number.isFinite(lonN)) {
+      throw new Error("findParcelByPoint requires numeric lat and lon.");
+    }
+
+    for (const d of POINT_DELTAS) {
+      const sql = `SELECT ${PARCEL_SELECT_COLS}
+FROM "${RESOURCE_CENTROIDS}" c
+JOIN "${RESOURCE_ASSESSMENTS}" a ON c."PIN" = a."PARID"
+WHERE c."LAT" BETWEEN ${latN - d} AND ${latN + d}
+  AND c."LONG" BETWEEN ${lonN - d} AND ${lonN + d}
+LIMIT 50`;
+      const rows = await runSql(sql);
+      const candidates = rows.filter((r) => num(r.LAT) !== null && num(r.LONG) !== null);
+      if (candidates.length > 0) {
+        candidates.sort((p, q) =>
+          ((num(p.LAT) - latN) ** 2 + (num(p.LONG) - lonN) ** 2) -
+          ((num(q.LAT) - latN) ** 2 + (num(q.LONG) - lonN) ** 2));
+        return mapParcelRow(candidates[0]);
+      }
+    }
+
+    throw new Error(
+      `No parcel found near (${latN.toFixed(6)}, ${lonN.toFixed(6)}) — ` +
+      `the location may be outside Allegheny County or on unparceled land.`
+    );
   }
 
   // --- WPRDC.fetchComps ---
@@ -264,5 +315,5 @@ LIMIT ${COMPS_LIMIT}`;
     }));
   }
 
-  return { findParcelByAddress, fetchComps };
+  return { findParcelByAddress, findParcelByPoint, fetchComps };
 })();

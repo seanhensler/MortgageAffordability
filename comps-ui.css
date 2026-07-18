@@ -78,7 +78,7 @@ button.comp-filter-reset { margin: 0 0 1px auto; padding: 7px 14px; }
 #compsTable tbody tr.row-active { background: var(--nautical-accent-soft); }
 #compsTable tbody tr.row-flash { animation: comp-row-flash 1.6s ease-out; }
 @keyframes comp-row-flash {
-  0%, 60% { background: rgba(217, 114, 44, 0.35); }
+  0%, 60% { background: rgba(16, 185, 129, 0.35); }
   100% { background: transparent; }
 }
 
@@ -103,8 +103,8 @@ button.comp-filter-reset { margin: 0 0 1px auto; padding: 7px 14px; }
 }
 #compsTable a.addr-link:hover,
 #compsTable a.addr-link:focus-visible {
-  color: #2E5E9E;
-  border-bottom: 1px solid #2E5E9E;
+  color: var(--nautical-accent-hover);
+  border-bottom: 1px solid var(--nautical-accent-hover);
 }
 
 /* Typography hierarchy: bold sale price, muted municipality sub-label. */

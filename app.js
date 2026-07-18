@@ -403,19 +403,89 @@ function switchToTab(tabName) {
   if (tabName === "comps") CompMap.invalidate();
 }
 
+// Spatial-first parcel resolution. Geocoded coordinates — whether from the map search bar,
+// Google Places, or a just-in-time geocode of a typed address — drive a centroid lookup
+// (WPRDC.findParcelByPoint). Text matching against county street strings survives only as a
+// last resort, because county records abbreviate ("BLVD" vs Nominatim's "Boulevard") or file
+// parcels under a different street entirely ("0 ORPHAN ST" hosts 1400 Washington Blvd), and
+// a relaxed LIKE can silently match the same house number on a same-named street in another
+// municipality.
+// A spatially-resolved parcel is trusted outright when its county address carries the house
+// number the user typed. When it doesn't, that is EITHER a geocoder-precision artifact (the
+// Census geocoder returns street-centerline interpolated points — verified live: its point
+// for 811 W Monroe Cir lands ~10 m from the 209 Thompson Dr centroid, the wrong parcel) OR
+// a parcel whose legal address genuinely differs from its mailing address ("0 ORPHAN ST"
+// hosts 1400 Washington Blvd). resolveParcel disambiguates the two with a second, independent
+// geocoder: agreement between both geocoders on the same parcel outranks a house-number
+// mismatch; disagreement falls to the county text match as arbiter.
+function houseNumberMatches(parcel, resolved) {
+  if (!resolved.houseNumber) return true; // nothing to validate against — trust the point
+  const parcelHouse = ((parcel.address || "").trim().split(/\s+/)[0] || "").toUpperCase();
+  return parcelHouse === String(resolved.houseNumber).trim().toUpperCase();
+}
+
+async function resolveParcel(resolved) {
+  // 1) Primary: coordinates that arrived with the resolution (Census geocoder or map-bar pick).
+  let primaryParcel = null;
+  if (typeof resolved.lat === "number" && typeof resolved.lon === "number") {
+    setCompsStatus("Resolving parcel from map coordinates…");
+    try {
+      primaryParcel = await WPRDC.findParcelByPoint({ lat: resolved.lat, lon: resolved.lon });
+    } catch (err) {
+      console.warn(`Spatial parcel lookup failed (${err.message}).`);
+    }
+    if (primaryParcel && houseNumberMatches(primaryParcel, resolved)) return primaryParcel;
+  }
+
+  // 2) Second opinion: OSM/Nominatim rooftop-quality point through the same spatial lookup.
+  let osmParcel = null;
+  setCompsStatus("Cross-checking parcel with rooftop geocoder…");
+  try {
+    const picked = await CompMap.geocode(resolved.formattedAddress);
+    if (picked && typeof picked.lat === "number" && typeof picked.lon === "number") {
+      osmParcel = await WPRDC.findParcelByPoint({ lat: picked.lat, lon: picked.lon });
+    }
+  } catch (err) {
+    console.warn(`Rooftop cross-check failed (${err.message}).`);
+  }
+  if (osmParcel && houseNumberMatches(osmParcel, resolved)) return osmParcel;
+
+  // 3) Both geocoders converging on one parcel beats a failed house-number check —
+  //    the legal-address-differs case.
+  if (primaryParcel && osmParcel && primaryParcel.parid === osmParcel.parid) return primaryParcel;
+
+  // 4) Geocoders disagree (or one is unavailable): let the county street records arbitrate.
+  if (resolved.houseNumber && resolved.streetName) {
+    setCompsStatus("Verifying against county street records…");
+    try {
+      return await WPRDC.findParcelByAddress({
+        houseNumber: resolved.houseNumber,
+        streetName: resolved.streetName,
+        zip: resolved.zip,
+      });
+    } catch (err) {
+      console.warn(`County text match failed (${err.message}).`);
+    }
+  }
+
+  // 5) Floor: best spatial answer available, rooftop-quality preferred.
+  const fallback = osmParcel || primaryParcel;
+  if (fallback) return fallback;
+  throw new Error(
+    "Could not resolve that address to a county parcel. Check the address, or check that " +
+    "the geocoding services (census.gov / openstreetmap.org) are reachable."
+  );
+}
+
 async function handleAddressResolved(resolved) {
   const parcelInfoEl = document.getElementById("parcelInfo");
   switchToTab("comps");
-  setCompsStatus("Looking up parcel in county records…");
+  setCompsStatus("Resolving parcel…");
   document.getElementById("compsResults").style.display = "none";
 
   let parcel;
   try {
-    parcel = await WPRDC.findParcelByAddress({
-      houseNumber: resolved.houseNumber,
-      streetName: resolved.streetName,
-      zip: resolved.zip,
-    });
+    parcel = await resolveParcel(resolved);
   } catch (err) {
     setCompsStatus(`Parcel lookup failed: ${err.message}`);
     parcelInfoEl.textContent = "";
@@ -582,7 +652,7 @@ function renderCashFlowChart() {
       {
         label: "Net Income",
         data: projection.map((p) => p.netIncome),
-        borderColor: "#5C6B7A",
+        borderColor: "#475569",
         borderDash: [4, 4],
         borderWidth: 2,
         pointRadius: 0,
@@ -592,7 +662,7 @@ function renderCashFlowChart() {
       {
         label: "PITI + HOA",
         data: projection.map((p) => p.pitiHoa),
-        borderColor: "#0B2545",
+        borderColor: "#0F172A",
         borderWidth: 2,
         pointRadius: 0,
         fill: false,
@@ -601,8 +671,8 @@ function renderCashFlowChart() {
       {
         label: "Limited-Duration Expenses",
         data: projection.map((p) => p.expenses),
-        borderColor: "#D9722C",
-        backgroundColor: "rgba(217, 114, 44, 0.14)",
+        borderColor: "#059669",
+        backgroundColor: "rgba(5, 150, 105, 0.14)",
         borderWidth: 2,
         pointRadius: 0,
         fill: true,
@@ -611,8 +681,8 @@ function renderCashFlowChart() {
       {
         label: "Net Discretionary Cash Flow",
         data: projection.map((p) => p.discretionary),
-        borderColor: "#1B3A5C",
-        backgroundColor: "rgba(27, 58, 92, 0.14)",
+        borderColor: "#334155",
+        backgroundColor: "rgba(51, 65, 85, 0.14)",
         borderWidth: 2.5,
         pointRadius: 0,
         fill: true,
@@ -640,12 +710,12 @@ function renderCashFlowChart() {
         x: {
           title: { display: true, text: "Months", font: { family: "Inter" } },
           ticks: { callback: (val) => (labels[val] % 12 === 0 || val === 0 ? labels[val] : ""), font: { family: "Inter", size: 11 } },
-          grid: { color: "#D7DEE5" },
+          grid: { color: "#CBD5E1" },
         },
         y: {
           title: { display: true, text: "$ / month", font: { family: "Inter" } },
           ticks: { callback: (val) => "$" + val.toLocaleString("en-US"), font: { family: "Inter", size: 11 } },
-          grid: { color: "#D7DEE5" },
+          grid: { color: "#CBD5E1" },
         },
       },
     },
