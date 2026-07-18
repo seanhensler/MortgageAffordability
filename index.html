@@ -11,22 +11,6 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet-geosearch@4.2.0/dist/geosearch.css" />
 <link rel="stylesheet" href="compmap.css">
-<script>
-  // GOOGLE PLACES AUTOCOMPLETE (optional but recommended):
-  // Paste your Google Cloud API key (Places API + Maps JavaScript API enabled, restricted
-  // to your site's domain) between the quotes below — that's the only change needed.
-  // While empty, the address bar falls back to manual entry resolved against Allegheny
-  // County parcel records (fully functional, just no type-ahead).
-  const GOOGLE_MAPS_API_KEY = "";
-  if (GOOGLE_MAPS_API_KEY) {
-    const gmapsScript = document.createElement("script");
-    gmapsScript.src = "https://maps.googleapis.com/maps/api/js?key=" +
-      encodeURIComponent(GOOGLE_MAPS_API_KEY) + "&libraries=places";
-    gmapsScript.async = true;
-    gmapsScript.defer = true;
-    document.head.appendChild(gmapsScript);
-  }
-</script>
 </head>
 <body>
 <div class="wrap">
@@ -117,7 +101,7 @@
           <select id="muni"></select>
         </label>
         <label>County millage (mills) <span class="hint">Allegheny County baseline — editable</span>
-          <input type="number" id="countyMillage" value="4.73" min="0" step="0.01">
+          <input type="number" id="countyMillage" value="6.43" min="0" step="0.01">
         </label>
         <label>Assessed value ($) <span class="hint" id="assessedHint">auto-estimated from price × Common Level Ratio; replaced with the actual county assessment when you search an address above</span>
           <input type="text" class="money-input" id="assessedValue" value="208,000">
@@ -269,7 +253,7 @@
               <div class="stat"><span class="stat-label">Avg $ / SqFt</span><span class="stat-value" id="compAvgPpsf"></span></div>
             </div>
             <div id="compFilterPanel"></div>
-            <div class="comps-scroll">
+            <div class="comps-table-scroll">
               <table id="compsTable">
                 <thead>
                   <tr>

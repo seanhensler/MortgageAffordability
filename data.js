@@ -2,11 +2,23 @@
 // This app is scoped exclusively to Allegheny County; the county-level baseline
 // millage and assessment constants live in tax.js (AlleghenyTax).
 // muniMills/schoolMills are mills applied to ASSESSED value.
+// Re-verified 2026-07-17 against apps.alleghenycounty.us/website/MillMuni.asp (municipal mills)
+// and qvsd.org Tax Information (school mills: 22.8469 mills for the 2026-2027 school year).
+// County baseline mills (6.43, effective 2025) live in tax.js, not here.
 
 const MILLAGE_DATA = [
   { region: "CENTRAL / CITY", muni: "City of Pittsburgh", school: "Pittsburgh Public", muniMills: 8.06, schoolMills: 10.457, eitDefault: 3 },
-  { region: "NORTH", muni: "Aleppo Township", school: "Quaker Valley", muniMills: 3.5, schoolMills: 22.075 },
-  { region: "NORTH", muni: "Bell Acres Borough", school: "Quaker Valley", muniMills: 5.07, schoolMills: 22.075 },
+  { region: "NORTH", muni: "Aleppo Township", school: "Quaker Valley", muniMills: 3.5, schoolMills: 22.8469 },
+  { region: "NORTH", muni: "Bell Acres Borough", school: "Quaker Valley", muniMills: 4.82, schoolMills: 22.8469 },
+  { region: "NORTH", muni: "Sewickley Borough", school: "Quaker Valley", muniMills: 6.25, schoolMills: 22.8469 },
+  { region: "NORTH", muni: "Edgeworth Borough", school: "Quaker Valley", muniMills: 4.15, schoolMills: 22.8469 },
+  { region: "NORTH", muni: "Sewickley Heights Borough", school: "Quaker Valley", muniMills: 5.50, schoolMills: 22.8469 },
+  { region: "NORTH", muni: "Sewickley Hills Borough", school: "Quaker Valley", muniMills: 2.84, schoolMills: 22.8469 },
+  { region: "NORTH", muni: "Glen Osborne Borough", school: "Quaker Valley", muniMills: 4.90, schoolMills: 22.8469 },
+  { region: "NORTH", muni: "Glenfield Borough", school: "Quaker Valley", muniMills: 4.15, schoolMills: 22.8469 },
+  { region: "NORTH", muni: "Haysville Borough", school: "Quaker Valley", muniMills: 6.063, schoolMills: 22.8469 },
+  { region: "NORTH", muni: "Leet Township", school: "Quaker Valley", muniMills: 9.10, schoolMills: 22.8469 },
+  { region: "NORTH", muni: "Leetsdale Borough", school: "Quaker Valley", muniMills: 9.00, schoolMills: 22.8469 },
   { region: "NORTH", muni: "Bellevue Borough", school: "Northgate", muniMills: 5.89, schoolMills: 26.7 },
   { region: "NORTH", muni: "Avalon Borough", school: "Northgate", muniMills: 9.83, schoolMills: 26.7 },
   { region: "NORTH", muni: "Ben Avon Borough", school: "Avonworth", muniMills: 5.5, schoolMills: 23.05 },

@@ -3,7 +3,9 @@
 // do not add other counties here.
 
 const AlleghenyTax = {
-  COUNTY_MILLAGE: 4.73,
+  // County mills raised 4.73 -> 6.43 by the 2025 county budget, effective 2025 —
+  // the first change to the county rate since 2013. Re-verified 2026-07-17.
+  COUNTY_MILLAGE: 6.43,
   HOMESTEAD_EXCLUSION: 18000,
   // Common Level Ratio: STEB's published assessed/market ratio, used to back into an estimated
   // assessed value from a purchase price when the actual county-assessed value is unknown.
@@ -19,7 +21,7 @@ const AlleghenyTax = {
   // Per spec, this applies a single county $18k exclusion against the COMBINED millage instead
   // of modeling three separate exclusion amounts — a reasonable approximation, not a precise
   // reproduction of an actual Allegheny County tax bill.
-  annualPropertyTax({ assessedValue, homesteadEnabled, muniMills, schoolMills, countyMills = 4.73 }) {
+  annualPropertyTax({ assessedValue, homesteadEnabled, muniMills, schoolMills, countyMills = 6.43 }) {
     const taxableAssessed = Math.max(0, assessedValue - (homesteadEnabled ? this.HOMESTEAD_EXCLUSION : 0));
     const totalMills = muniMills + schoolMills + countyMills;
     const annualTax = taxableAssessed * totalMills / 1000;
