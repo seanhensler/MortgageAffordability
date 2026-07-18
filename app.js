@@ -94,13 +94,33 @@ function populateMuniDropdown() {
 function matchMuniIndex(muniDesc) {
   const upper = (muniDesc || "").toUpperCase().trim();
   if (!upper) return -1;
-  if (/^PITTSBURGH$/.test(upper) || /WARD\s*-?\s*PITTSBURGH/.test(upper)) {
-    return MILLAGE_DATA.findIndex((m) => m.muni === "City of Pittsburgh");
-  }
-  // Strip suffixes from our table names ("Ross Township" -> "ROSS") and compare.
-  const stripped = (name) => name.toUpperCase()
-    .replace(/\b(TOWNSHIP|BOROUGH|MUNICIPALITY|CITY OF|CITY)\b/g, "").replace(/\s+/g, " ").trim();
-  return MILLAGE_DATA.findIndex((m) => stripped(m.muni) === upper || stripped(m.muni) === stripped(upper));
+
+  // Ward-level records ("14th Ward - PITTSBURGH", "3rd Ward - McKEESPORT", "1st Ward -
+  // CLAIRTON") resolve to their host city's row — the county files city parcels by ward.
+  const ward = upper.match(/WARD\s*-\s*(.+)$/);
+  const target = ward ? ward[1].trim() : upper;
+
+  // Normalize hard, but keep suffixes DISTINGUISHABLE: county MUNIDESC drifts from table
+  // names ("Mt. Oliver" vs "Mount Oliver Borough", "Baldwin Boro" vs "Baldwin Borough"),
+  // yet "Baldwin Boro" and "Baldwin Twp" are different municipalities with different rates,
+  // so suffixes are canonicalized (BOROUGH->BORO, TOWNSHIP->TWP) rather than dropped.
+  const norm = (name) => name.toUpperCase()
+    .replace(/\bBOROUGH\b/g, "BORO")
+    .replace(/\bTOWNSHIP\b/g, "TWP")
+    .replace(/\b(MUNICIPALITY|CITY OF|CITY)\b/g, "")
+    .replace(/\bMOUNT\b/g, "MT")
+    .replace(/[^A-Z0-9]/g, "");
+  const t = norm(target);
+
+  // Pass 1: suffix-aware exact match (disambiguates the Boro/Twp name pairs).
+  let idx = MILLAGE_DATA.findIndex((m) => norm(m.muni) === t);
+  if (idx >= 0) return idx;
+
+  // Pass 2: suffix-stripped match — most MUNIDESC values carry no suffix at all
+  // ("Ross", "Munhall") while the table says "Ross Township", "Munhall Borough".
+  const bare = (name) => norm(name).replace(/(BORO|TWP)$/, "");
+  const tb = bare(target);
+  return MILLAGE_DATA.findIndex((m) => bare(m.muni) === tb);
 }
 
 // --- Monthly expenses, split into debt obligations (DTI) vs lifestyle (budgeting only) ---
