@@ -1004,7 +1004,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.getElementById("addDebtExpenseBtn").addEventListener("click", () => addExpenseRow("debtExpenseRows"));
   document.getElementById("addLifestyleExpenseBtn").addEventListener("click", () => addExpenseRow("lifestyleExpenseRows"));
-  document.getElementById("calcBtn").addEventListener("click", calculate);
+  document.getElementById("calcBtn").addEventListener("click", () => {
+    switchToTab("results");
+    calculate();
+  });
   document.getElementById("reforecastBtn").addEventListener("click", runReforecast);
 
   let extraPaymentTimer = null;

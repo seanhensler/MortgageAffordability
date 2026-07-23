@@ -63,18 +63,23 @@ const Affordability = (() => {
     return { score: 30, tier: "Limited" };
   }
 
-  // --- Sub-score 2: emergency reserves after closing. Returns null (excluded from the
-  // composite, NOT penalized) when the user hasn't entered liquid savings — an unanswered
-  // question isn't evidence of zero reserves. ---
+  // --- Sub-score 2: emergency reserves after closing. `liquidSavings` is the household's TOTAL
+  // current savings/investments (gross — before anything is spent on the purchase); the down
+  // payment and closing costs are subtracted here, once, to find what's actually left over.
+  // Returns null (excluded from the composite, NOT penalized) when the user hasn't entered
+  // liquid savings — an unanswered question isn't evidence of zero reserves. Every field needed
+  // to reconstruct the arithmetic in the narrative is returned alongside the score/tier. ---
   function scoreReserves(liquidSavings, downAmt, closingCosts, monthlyObligations) {
     if (!liquidSavings || liquidSavings <= 0) return null;
     const afterClosing = liquidSavings - downAmt - closingCosts;
-    if (afterClosing < 0) return { score: 5, tier: "Depleted by closing costs", months: 0 };
-    const months = monthlyObligations > 0 ? afterClosing / monthlyObligations : 0;
-    if (months < 3) return { score: 20, tier: "High Risk", months };
-    if (months < 6) return { score: 60, tier: "Adequate", months };
-    if (months < 12) return { score: 85, tier: "Good", months };
-    return { score: 100, tier: "Excellent", months };
+    const months = monthlyObligations > 0 ? Math.max(0, afterClosing) / monthlyObligations : 0;
+    let score, tier;
+    if (afterClosing < 0) { score = 0; tier = "Insufficient for closing"; }
+    else if (months < 3) { score = 20; tier = "High Risk"; }
+    else if (months < 6) { score = 60; tier = "Adequate"; }
+    else if (months < 12) { score = 85; tier = "Good"; }
+    else { score = 100; tier = "Excellent"; }
+    return { score, tier, months, afterClosing, liquidSavings, downAmt, closingCosts };
   }
 
   // --- Sub-score 3: savings rate — retirement contributions already being made PLUS leftover
@@ -165,10 +170,19 @@ const Affordability = (() => {
     }
 
     if (m.reserves) {
-      if (m.reserves.months >= 6) {
-        strengths.push(`reserves after closing cover roughly ${m.reserves.months.toFixed(1)} months of obligations (${m.reserves.tier.toLowerCase()})`);
+      const rv = m.reserves;
+      if (rv.afterClosing < 0) {
+        risks.push(
+          `your ${fmtMoney(rv.liquidSavings)} in savings would not fully cover the ${fmtMoney(rv.downAmt)} down payment plus ${fmtMoney(rv.closingCosts)} in closing costs (short by ${fmtMoney(Math.abs(rv.afterClosing))}), leaving no cash reserve after closing`
+        );
+      } else if (rv.months >= 6) {
+        strengths.push(
+          `after the ${fmtMoney(rv.downAmt)} down payment and ${fmtMoney(rv.closingCosts)} in closing costs, the remaining ${fmtMoney(rv.afterClosing)} in savings covers roughly ${rv.months.toFixed(1)} months of obligations (${rv.tier.toLowerCase()})`
+        );
       } else {
-        risks.push(`reserves after closing cover only about ${m.reserves.months.toFixed(1)} months of obligations`);
+        risks.push(
+          `after the ${fmtMoney(rv.downAmt)} down payment and ${fmtMoney(rv.closingCosts)} in closing costs, the remaining ${fmtMoney(rv.afterClosing)} in savings covers only about ${rv.months.toFixed(1)} months of obligations`
+        );
       }
     }
 
@@ -202,7 +216,7 @@ const Affordability = (() => {
     if (m.stressTest.score < 70) improve.push("a larger reserve would better absorb a tax or insurance increase");
     if (improve.length) parts.push(`<strong>Could improve:</strong> ${improve.join("; ")}.`);
 
-    return parts.join(" ");
+    return parts.join("<br><br>");
   }
 
   // --- Public entry point ---
