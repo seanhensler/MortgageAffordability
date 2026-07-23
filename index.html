@@ -59,6 +59,19 @@
         <label>Local Earned Income Tax rate (%) <span class="hint">auto-fills to 3.00% (1% city + 2% school) for City of Pittsburgh, 1% elsewhere — edit if known</span>
           <input type="number" id="eitRate" value="1" min="0" step="0.1">
         </label>
+        <label>Income stability <span class="hint">affects confidence in the Ability-to-Pay assessment, not the tax math</span>
+          <select id="incomeStability">
+            <option value="salary" selected>Salary (steady)</option>
+            <option value="multiple">Multiple income sources</option>
+            <option value="retirement">Retirement / fixed income</option>
+            <option value="hourly">Hourly</option>
+            <option value="commission">Commission / variable</option>
+            <option value="selfEmployed">Self-employed / business income</option>
+          </select>
+        </label>
+        <label>Liquid savings available for reserves ($) <span class="hint">cash/investments available after the down payment and closing costs — optional, but improves the Ability-to-Pay assessment below; leave blank if you'd rather not estimate it</span>
+          <input type="text" class="money-input" id="liquidSavings" value="">
+        </label>
       </section>
 
       <section class="card">
@@ -285,6 +298,7 @@
 <script src="https://unpkg.com/leaflet-geosearch@4.2.0/dist/geosearch.umd.js"></script>
 <script src="data.js"></script>
 <script src="tax.js"></script>
+<script src="affordability.js"></script>
 <script src="comps.js"></script>
 <script src="compfilters.js"></script>
 <script src="compfilters-ui.js"></script>

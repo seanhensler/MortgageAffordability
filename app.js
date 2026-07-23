@@ -225,6 +225,8 @@ function calculate() {
   const pmiRate = (parseFloat(document.getElementById("pmiRate").value) || 0) / 100;
   const hoa = parseMoney("hoa");
   const sqft = parseFloat(document.getElementById("sqft").value) || 0;
+  const liquidSavings = parseMoney("liquidSavings");
+  const incomeStability = document.getElementById("incomeStability").value;
 
   // --- Take-home pay ---
   // Section 125 payroll health insurance premiums are pre-tax for federal, FICA, AND PA
@@ -282,6 +284,7 @@ function calculate() {
     loanAmount, monthlyPI, muni, propertyTax, monthlyPropertyTax, transfer, transferRate, downAmt,
     homesteadEnabled, assessedValue,
     monthlyInsurance, monthlyPMI, hoa, monthlyMaintenance, totalMonthlyHousing, downPct,
+    liquidSavings, incomeStability,
   });
 
   renderUnderwriting(grossMonthly, totalMonthlyHousing, debtTotal);
@@ -348,21 +351,40 @@ function renderResults(r) {
     (1% state ${fmtMoney(r.transfer.stateTax)} + ${r.transferRate}% local ${fmtMoney(r.transfer.localTax)})
     &mdash; with your ${fmtMoney(r.downAmt)} down payment, roughly ${fmtMoney(r.transfer.totalTax + r.downAmt)} cash needed before other closing fees.</p>`;
 
-  const netAfterAll = r.netMonthly - r.otherExpenses - r.totalMonthlyHousing;
+  // Personal "Ability to Pay" — cash-flow-first, distinct from the Lender Underwriting card
+  // below (28/36 rule). See affordability.js for the full weighting rationale: monthly cash
+  // flow dominates, DTI/housing ratio is deliberately the lowest-weighted input.
+  const frontEndPct = r.grossMonthly > 0 ? (r.totalMonthlyHousing / r.grossMonthly) * 100 : 0;
+  const backEndPct = r.grossMonthly > 0 ? ((r.totalMonthlyHousing + r.debtTotal) / r.grossMonthly) * 100 : 0;
+
+  const affordability = Affordability.assess({
+    netMonthly: r.netMonthly, grossMonthly: r.grossMonthly, otherExpenses: r.otherExpenses,
+    totalMonthlyHousing: r.totalMonthlyHousing,
+    monthlyPI: r.monthlyPI, monthlyPropertyTax: r.monthlyPropertyTax, monthlyInsurance: r.monthlyInsurance,
+    monthlyMaintenance: r.monthlyMaintenance, monthlyPMI: r.monthlyPMI, hoa: r.hoa,
+    contrib401kMonthly: r.contrib401k / 12, contribRothMonthly: r.contribRoth / 12,
+    downAmt: r.downAmt, closingCosts: r.transfer.totalTax,
+    liquidSavings: r.liquidSavings, incomeStability: r.incomeStability,
+    frontEndPct, backEndPct,
+  });
+
+  const severityClass = {
+    Excellent: "ok", Comfortable: "ok", Manageable: "warn", Stretch: "warn",
+    "High Risk": "bad", "Not Affordable": "bad",
+  }[affordability.category];
+
   const pctOfGross = (r.totalMonthlyHousing + r.otherExpenses) / r.grossMonthly * 100;
   const pctOfNet = (r.totalMonthlyHousing + r.otherExpenses) / r.netMonthly * 100;
 
-  let verdictClass = "ok";
-  let verdictText = "Comfortable";
-  if (netAfterAll < 0 || pctOfGross > 36 || pctOfNet > 50) { verdictClass = "bad"; verdictText = "Stretching too far"; }
-  else if (pctOfGross > 28 || pctOfNet > 40) { verdictClass = "warn"; verdictText = "Tight, proceed carefully"; }
-
   document.getElementById("verdict").innerHTML = `
-    <div class="verdict-box ${verdictClass}">
-      <strong>${verdictText}</strong><br>
-      Housing + other monthly expenses are ${pctOfGross.toFixed(1)}% of gross income (lender 28/36 rule)
-      and ${pctOfNet.toFixed(1)}% of your actual net take-home pay.<br>
-      Leftover after housing and other expenses: ${fmtMoney(netAfterAll)}/mo.
+    <div class="verdict-box ${severityClass}">
+      <strong>${affordability.category}</strong><br>
+      ${affordability.narrative}
+      <p class="hint" style="margin-top:10px;">For reference: housing + other monthly expenses are
+      ${pctOfGross.toFixed(1)}% of gross income and ${pctOfNet.toFixed(1)}% of net take-home pay.
+      Leftover after housing and other expenses: ${fmtMoney(affordability.metrics.netAfterAll)}/mo.
+      See the Lender Underwriting card below for how a conventional lender evaluates this loan
+      against the 28/36 rule — a qualification guideline, not a measure of financial comfort.</p>
     </div>`;
 }
 
