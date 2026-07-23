@@ -41,11 +41,17 @@
 //   against a generous Allegheny County, PA bounding box; a match outside that
 //   box is treated the same as "no match".
 //
-// PUBLIC CONTRACT (unchanged):
+// PUBLIC CONTRACT:
 //   AddressSearch.init({
 //     inputEl,            // <input type="text"> for the address
 //     statusEl,           // element to receive status/error text
 //     onAddressResolved,  // callback({ formattedAddress, lat, lon, houseNumber, streetName, zip, source })
+//     countyBadgeEl,      // OPTIONAL <span>/<div> — live "✓ Allegheny County" /
+//                         // "⚠ Outside Allegheny County" confirmation badge, debounced
+//                         // 600ms after typing pauses. Independent of the Look up/Enter
+//                         // flow below: it never calls onAddressResolved, never fetches
+//                         // comps, never switches tabs — validation feedback only. Omit
+//                         // to skip this feature entirely (no behavior change otherwise).
 //   })
 //
 //   A "Look up" button is always rendered after inputEl, and Enter on inputEl
@@ -172,8 +178,45 @@ const AddressSearch = (() => {
     });
   }
 
+  // --- Debounced live county-confirmation badge ---
+  // Independent of the explicit Look up/Enter flow below: as the user types, once the text
+  // plausibly parses as a full address, a debounced (600ms after typing pauses) Census probe
+  // updates a small "Allegheny County" badge next to the input — validation feedback only, no
+  // parcel resolution, no comps fetch, no tab switch. A monotonic request token discards any
+  // response that resolves after a newer keystroke has already fired a fresher probe.
+  const BADGE_DEBOUNCE_MS = 600;
+
+  function setupCountyBadge(inputEl, badgeEl) {
+    if (!badgeEl) return;
+    let timer = null;
+    let requestToken = 0;
+
+    function setBadge(state) {
+      badgeEl.className = "county-badge" + (state ? ` county-badge-${state}` : "");
+      badgeEl.textContent =
+        state === "in" ? "✓ Allegheny County" : state === "out" ? "⚠ Outside Allegheny County" : "";
+    }
+
+    inputEl.addEventListener("input", () => {
+      clearTimeout(timer);
+      const trimmed = (inputEl.value || "").trim();
+      setBadge(null); // clear stale confirmation immediately on any edit
+
+      if (!trimmed || !parseManualAddress(trimmed)) return; // not yet a plausible full address
+
+      timer = setTimeout(async () => {
+        const token = ++requestToken;
+        const match = await fetchCensusMatch(trimmed);
+        if (token !== requestToken) return; // a newer keystroke has since superseded this probe
+        if (!match) { setBadge(null); return; } // inconclusive — still mid-typing, no verdict
+        setBadge(isWithinCounty(match.lat, match.lon) ? "in" : "out");
+      }, BADGE_DEBOUNCE_MS);
+    });
+  }
+
   function setupLookup(config) {
-    const { inputEl, statusEl, onAddressResolved } = config;
+    const { inputEl, statusEl, onAddressResolved, countyBadgeEl } = config;
+    setupCountyBadge(inputEl, countyBadgeEl);
 
     statusEl.textContent =
       "Type a full address and press Enter or Look up — resolved via the free US Census geocoder.";

@@ -199,6 +199,9 @@ function monthlyPayment(loanAmount, annualRate, years) {
 
 // --- Affordability calculation ---
 function calculate() {
+  const emptyStateEl = document.getElementById("emptyState");
+  if (emptyStateEl) emptyStateEl.style.display = "none";
+
   const salary = parseMoney("salary");
   const filingStatus = document.getElementById("filingStatus").value;
   const contrib401k = parseMoney("contrib401k");
@@ -288,6 +291,14 @@ function calculate() {
   });
 
   renderUnderwriting(grossMonthly, totalMonthlyHousing, debtTotal);
+
+  const frontEndPctForStickyBar = grossMonthly > 0 ? (totalMonthlyHousing / grossMonthly) * 100 : 0;
+  const backEndPctForStickyBar = grossMonthly > 0 ? ((totalMonthlyHousing + debtTotal) / grossMonthly) * 100 : 0;
+  StickyBar.update({
+    netMonthly, totalMonthlyHousing,
+    netDiscretionary: netMonthly - otherExpenses - totalMonthlyHousing,
+    dtiStatus: dtiStatusTier(frontEndPctForStickyBar, backEndPctForStickyBar),
+  });
 
   lastCashFlowInputs = {
     netMonthly, monthlyPI, monthlyPropertyTax, monthlyInsurance, monthlyPMI, hoa, monthlyMaintenance,
@@ -390,6 +401,18 @@ function renderResults(r) {
 
 // --- Lender Underwriting Status (28/36 rule): front-end uses PITI+HOA only,
 // back-end adds debt obligations only — lifestyle expenses are excluded from both. ---
+// Mirrors DtiGauge's own tier thresholds (28/31 front-end, 36/43 back-end, worst tier wins) —
+// kept as a small local duplicate rather than exporting internals from dtigauge.js, since only
+// the tier key (ok/warn/bad) is needed here, to color the sticky bar's DTI status stat.
+function dtiStatusTier(frontEndPct, backEndPct) {
+  const tier = (pct, cautionAt, riskAt) => (pct > riskAt ? "bad" : pct >= cautionAt ? "warn" : "ok");
+  const front = tier(frontEndPct, 28, 31);
+  const back = tier(backEndPct, 36, 43);
+  if (front === "bad" || back === "bad") return "bad";
+  if (front === "warn" || back === "warn") return "warn";
+  return "ok";
+}
+
 function renderUnderwriting(grossMonthly, totalMonthlyHousing, debtTotal) {
   document.getElementById("underwritingCard").style.display = "";
 
@@ -399,6 +422,10 @@ function renderUnderwriting(grossMonthly, totalMonthlyHousing, debtTotal) {
   const backEndPct = grossMonthly > 0 ? backEndAmount / grossMonthly * 100 : 0;
   const maxBackEndTotal = grossMonthly * 0.36;
   const maxPitiUnderBackEnd = Math.max(0, maxBackEndTotal - debtTotal);
+
+  DtiGauge.render(document.getElementById("dtiGauge"), {
+    frontEndPct, backEndPct, maxFrontEndPayment, maxBackEndTotal,
+  });
 
   const rows = [
     ["Gross monthly income", fmtMoney(grossMonthly)],
@@ -1018,11 +1045,39 @@ document.addEventListener("DOMContentLoaded", () => {
     }, 400);
   });
 
+  // Quick preset chips: extra-payment chips ADD to whatever's already in the field (so
+  // clicking +$100 twice reaches $200 — quick incremental experimentation); lump-sum chips
+  // SET the field outright (trying a specific scenario, not accumulating). Both fire a real
+  // "input" event so the existing debounced-recalc / manual-Apply-Reforecast flows for those
+  // fields run exactly as if the user had typed the value themselves.
+  function bumpMoneyInput(inputId, { add, set }) {
+    const el = document.getElementById(inputId);
+    const current = parseFloat((el.value || "0").replace(/,/g, "")) || 0;
+    const next = set !== undefined ? set : current + add;
+    el.value = Math.max(0, next).toLocaleString("en-US");
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  document.querySelectorAll(".preset-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      if (chip.dataset.add !== undefined) {
+        bumpMoneyInput("extraPayment", { add: parseFloat(chip.dataset.add) });
+      } else if (chip.dataset.set !== undefined) {
+        bumpMoneyInput("lumpSum", { set: parseFloat(chip.dataset.set) });
+      } else if (chip.dataset.reset !== undefined) {
+        bumpMoneyInput(chip.dataset.reset, { set: 0 });
+      }
+    });
+  });
+
   AddressSearch.init({
     inputEl: document.getElementById("addressInput"),
     statusEl: document.getElementById("addressStatus"),
     onAddressResolved: handleAddressResolved,
+    countyBadgeEl: document.getElementById("countyBadge"),
   });
+
+  StickyBar.init(document.getElementById("stickybar"));
 
   CompFilterPanel.render(document.getElementById("compFilterPanel"), {
     onChange: applyCompFilters,
@@ -1046,5 +1101,7 @@ document.addEventListener("DOMContentLoaded", () => {
   setupTabs();
   syncDownPayment("pct");
   syncAssessedEstimate();
-  calculate();
+  // Clean-slate load: no auto-calculation, no pre-populated results. The empty-state card
+  // (#emptyState in index.html) stays visible until the user searches an address or clicks
+  // Calculate — see calculate()'s first line and handleAddressResolved().
 });

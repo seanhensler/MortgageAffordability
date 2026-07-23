@@ -1,4 +1,9 @@
-/* Steel Blue & Emerald Grass design tokens: Dark Steel Blue, Solid White, selective Emerald */
+/* Steel Blue & Emerald Grass design tokens: Dark Steel Blue, Solid White, selective Emerald.
+   This is the LIGHT theme and also the pre-JS fallback (theme.js sets data-theme on <html>
+   synchronously in <head> before paint, so in practice this block is only ever visible when
+   data-theme="light" is active or JS is disabled). See the [data-theme="dark"] override below
+   for the dark palette — same variable names, so every component that already reads a
+   --nautical-* token re-themes automatically with zero per-component changes. */
 :root {
   --nautical-bg: #F1F5F9;
   --nautical-surface: #FFFFFF;
@@ -17,17 +22,47 @@
   --nautical-bad-text: #9A4A14;
   --nautical-ok-bg: #E3E9F0;
   --nautical-ok-text: #0F172A;
+  --nautical-shadow: 0 1px 2px rgba(11, 37, 69, 0.06);
   --font-sans: "Inter", -apple-system, Arial, sans-serif;
 }
 
+/* Dark theme (default — see theme.js). Slate/zinc neutrals per spec, emerald/amber/rose
+   accents for status semantics. Same token names as :root above so no other rule in this
+   file, comps-ui.css, compmap.css, dtigauge.css, or stickybar.css needs to know which
+   theme is active — they just read the variable. */
+html[data-theme="dark"] {
+  --nautical-bg: #0F172A;
+  --nautical-surface: #1E293B;
+  --nautical-border: #334155;
+  --nautical-text: #F1F5F9;
+  --nautical-text-secondary: #CBD5E1;
+  --nautical-muted: #94A3B8;
+  --nautical-accent: #10B981;
+  --nautical-accent-hover: #34D399;
+  --nautical-accent-soft: rgba(16, 185, 129, 0.18);
+  --nautical-chip-bg: #334155;
+  --nautical-chip-text: #CBD5E1;
+  --nautical-warn-bg: rgba(245, 158, 11, 0.16);
+  --nautical-warn-text: #FBBF24;
+  --nautical-bad-bg: rgba(244, 63, 94, 0.16);
+  --nautical-bad-text: #FB7185;
+  --nautical-ok-bg: rgba(16, 185, 129, 0.16);
+  --nautical-ok-text: #34D399;
+  --nautical-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+}
+
 * { box-sizing: border-box; }
+html { overflow-x: hidden; } /* safety net: no single element should ever cause page-level horizontal scroll */
 body {
   font-family: var(--font-sans);
   background: var(--nautical-bg);
   margin: 0;
   color: var(--nautical-text);
+  transition: background-color 0.2s ease, color 0.2s ease;
+  overflow-x: hidden;
 }
 .wrap { max-width: 1200px; margin: 0 auto; padding: 32px 20px 60px; }
+.app-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 h1 {
   font-family: var(--font-sans);
   font-weight: 700;
@@ -35,13 +70,48 @@ h1 {
   margin-bottom: 4px;
 }
 .sub { color: var(--nautical-muted); margin-top: 0; margin-bottom: 24px; font-family: var(--font-sans); }
-.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 
-.split-layout { display: grid; grid-template-columns: 1fr 1.15fr; gap: 24px; align-items: start; }
+/* Theme toggle — pill switch, top-right of the header. Knob slides right + track turns
+   emerald when dark mode is active (html[data-theme="dark"]); plain slate track/knob in
+   light mode. Pure CSS, no icon glyphs. */
+.theme-switch {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 24px;
+  padding: 0;
+  position: relative;
+  background: var(--nautical-border);
+  border: 1px solid var(--nautical-border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+.theme-switch-knob {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--nautical-surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: transform 0.2s ease, background-color 0.2s ease;
+}
+html[data-theme="dark"] .theme-switch { background: var(--nautical-accent); border-color: var(--nautical-accent); }
+html[data-theme="dark"] .theme-switch-knob { transform: translateX(20px); background: #0F172A; }
+.grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
+
+/* minmax(0, ...) rather than a bare fraction on every track below: a plain `1fr` grid track's
+   minimum width defaults to its content's min-content size, so one unshrinkable child (a
+   money value, a long label) silently forces the WHOLE grid — and everything alongside it —
+   wider than the viewport instead of wrapping/shrinking. minmax(0, 1fr) removes that implicit
+   floor so the mobile breakpoint below can actually collapse to a single column. */
+.split-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 24px; align-items: start; }
 .inputs-col {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  min-width: 0;
   position: sticky;
   top: 1rem;
   align-self: start;
@@ -56,7 +126,7 @@ h1 {
   scrollbar-width: none;
 }
 .inputs-col::-webkit-scrollbar { display: none; }
-.results-col { display: flex; flex-direction: column; gap: 20px; }
+.results-col { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
 #cashFlowCard { margin-bottom: 20px; }
 
 .app-footer {
@@ -72,9 +142,10 @@ h1 {
 .card {
   background: var(--nautical-surface);
   border: 1px solid var(--nautical-border);
-  border-radius: 8px;
-  padding: 20px 22px;
-  box-shadow: 0 1px 2px rgba(11, 37, 69, 0.06);
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: var(--nautical-shadow);
+  transition: background-color 0.2s ease, border-color 0.2s ease;
 }
 .card h2 {
   font-family: var(--font-sans);
@@ -107,6 +178,22 @@ label {
   margin-bottom: 14px;
 }
 .hint { font-weight: 400; color: var(--nautical-muted); font-size: 11px; display: block; margin: 2px 0 0; }
+
+/* Live county-confirmation badge (places.js, debounced as-you-type). Empty/no class = not
+   shown yet (still typing / inconclusive) — the element stays in the DOM so layout doesn't
+   jump when it appears. */
+.county-badge {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  min-height: 1px;
+}
+.county-badge-in { background: var(--nautical-ok-bg); color: var(--nautical-ok-text); }
+.county-badge-out { background: var(--nautical-bad-bg); color: var(--nautical-bad-text); }
 label.spaced-above { margin-top: 20px; }
 input, select {
   display: block;
@@ -114,11 +201,12 @@ input, select {
   margin-top: 6px;
   padding: 8px 10px;
   border: 1px solid var(--nautical-border);
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 14px;
   font-family: var(--font-sans);
   background: var(--nautical-surface);
   color: var(--nautical-text);
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 }
 label.checkbox-label { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 label.checkbox-label input { width: auto; margin: 0; }
@@ -157,7 +245,29 @@ button#calcBtn {
 }
 button#calcBtn:hover { background: var(--nautical-accent-hover); }
 
+/* Empty-state prompt — shown until the first Calculate click or address resolution. */
+.empty-state {
+  text-align: center;
+  padding: 48px 24px;
+  border-style: dashed;
+  border-color: var(--nautical-border);
+  background: var(--nautical-bg);
+  box-shadow: none;
+}
+.empty-state h2 {
+  justify-content: center;
+  color: var(--nautical-accent);
+  font-size: 18px;
+}
+.empty-state .hint {
+  max-width: 480px;
+  margin: 8px auto 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .results { margin-top: 0; }
+#underwritingTable { margin-top: 20px; }
 table { width: 100%; border-collapse: collapse; font-size: 14px; font-family: var(--font-sans); }
 table td, table th { padding: 6px 4px; border-bottom: 1px solid var(--nautical-border); }
 table td:last-child, table th:last-child { text-align: right; }
@@ -216,7 +326,7 @@ table tr.footnote td {
   background: var(--nautical-surface);
   border: 1px solid var(--nautical-border);
   border-radius: 10px;
-  box-shadow: 0 1px 2px rgba(11, 37, 69, 0.06);
+  box-shadow: var(--nautical-shadow);
 }
 .tab-btn {
   width: 100%;
@@ -290,6 +400,30 @@ button.secondary-btn {
 }
 button.secondary-btn:hover { background: var(--nautical-border); }
 
+/* Quick preset chips (extra payment / lump sum) — small pill buttons for one-click
+   micro-experimentation instead of manual typing. */
+.preset-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.preset-chip {
+  padding: 6px 12px;
+  background: var(--nautical-accent-soft);
+  color: var(--nautical-accent);
+  border: 1px solid var(--nautical-accent);
+  border-radius: 999px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease, transform 0.1s ease;
+}
+.preset-chip:hover { background: var(--nautical-accent); color: var(--nautical-surface); }
+.preset-chip:active { transform: scale(0.96); }
+.preset-chip.preset-chip-reset {
+  background: var(--nautical-bg);
+  color: var(--nautical-muted);
+  border-color: var(--nautical-border);
+}
+.preset-chip.preset-chip-reset:hover { background: var(--nautical-border); color: var(--nautical-text); }
+
 /* Primary emerald action button — used for the address bar's "Look up" button
    (places.js assigns className "lookup-btn"). Same box model as secondary-btn
    so layout/spacing is unaffected; only the color treatment differs. */
@@ -309,8 +443,8 @@ button.lookup-btn {
 }
 button.lookup-btn:hover { background: var(--nautical-accent-hover); border-color: var(--nautical-accent-hover); }
 
-.grid.stats { grid-template-columns: repeat(4, 1fr); }
-.snapshot-stats { grid-template-columns: repeat(3, 1fr); margin-bottom: 18px; }
+.grid.stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.snapshot-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 18px; }
 .stat {
   display: flex;
   flex-direction: column;
@@ -359,6 +493,6 @@ tr.amort-totals-row td {
 #cashFlowCard h2 { font-size: 16px; }
 
 @media (max-width: 860px) {
-  .split-layout { grid-template-columns: 1fr; }
+  .split-layout { grid-template-columns: minmax(0, 1fr); }
   .inputs-col { position: static; }
 }

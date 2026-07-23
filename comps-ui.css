@@ -151,3 +151,87 @@ button.comp-filter-reset { margin: 0 0 1px auto; padding: 7px 14px; }
   .comp-filter-group select, .comp-filter-group input { min-width: 96px; }
   #compsTable thead th, #compsTable tbody td { padding: 6px 6px; }
 }
+
+/* Narrow phones: flex-wrap alone still leaves the last line's natural content (e.g. the
+   sqft inputs + reset button together) wider than the viewport with no room left to wrap
+   inside. Stacking every filter control to full width sidesteps the fragile last-line math
+   entirely instead of tuning min-widths for every viewport size. */
+@media (max-width: 480px) {
+  .comp-filters { flex-direction: column; align-items: stretch; }
+  .comp-filter-group, .comp-filter-group select, .comp-filter-group input { min-width: 0; width: 100%; }
+  button.comp-filter-reset { margin: 4px 0 0; width: 100%; }
+}
+
+/* --- Mobile: stacked cards instead of a horizontally-overflowing table (<768px). ---
+   The classic CSS-only responsive-table technique: hide the header row, turn every <tr>
+   into a card and every <td> into a labeled line via ::before content — no JS/markup
+   change needed since each <td> already carries a distinct col-* class (see the row
+   template in app.js). The zero-state row (.no-comps-row, a single centered message) is
+   explicitly exempted so it keeps rendering as plain centered text, not a labeled line. */
+@media (max-width: 767px) {
+  .comps-table-scroll { max-height: 70vh; border: none; }
+
+  #compsTable thead { display: none; }
+  #compsTable, #compsTable tbody, #compsTable tr { display: block; width: 100%; }
+
+  #compsTable tbody tr {
+    margin-bottom: 10px;
+    padding: 12px 14px;
+    border: 1px solid var(--nautical-border);
+    border-radius: 10px;
+    background: var(--nautical-surface);
+  }
+  #compsTable tbody tr:nth-child(even) { background: var(--nautical-surface); } /* cancel desktop zebra */
+  #compsTable tbody tr:last-child { margin-bottom: 0; }
+
+  #compsTable tbody td {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 4px 12px;
+    padding: 4px 0;
+    border-bottom: none;
+    font-size: 13px;
+    min-width: 0;
+    /* Desktop's white-space: nowrap (needed for aligned table columns) would force this
+       flex row wider than the viewport with no way to shrink — a stacked card can safely
+       wrap a value onto its own line instead, so cancel it here. */
+    white-space: normal !important;
+  }
+  #compsTable tbody td:not(:last-child) { border-bottom: 1px dashed var(--nautical-border); }
+  #compsTable tbody td.col-dist, #compsTable tbody td.col-bdba { text-align: right; }
+
+  /* The address is the card's title line — full width, no label, bigger, left-aligned. */
+  #compsTable tbody td.col-addr {
+    display: block;
+    font-size: 14px;
+    font-weight: 600;
+    padding-bottom: 8px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--nautical-border) !important;
+  }
+
+  /* Every other cell gets a muted label pulled from its column via ::before. */
+  #compsTable tbody td.col-date::before   { content: "Sale Date"; }
+  #compsTable tbody td.col-price::before  { content: "Price"; }
+  #compsTable tbody td.col-dist::before   { content: "Distance"; }
+  #compsTable tbody td.col-bdba::before   { content: "Bed / Bath"; }
+  #compsTable tbody td.col-sqft::before   { content: "Sq Ft"; }
+  #compsTable tbody td.col-ppsf::before   { content: "$ / Sq Ft"; }
+  #compsTable tbody td:not(.col-addr)::before {
+    color: var(--nautical-muted);
+    font-weight: 500;
+    font-size: 12px;
+  }
+  #compsTable tbody td.col-dist, #compsTable tbody td.col-bdba { text-align: right; }
+
+  /* Zero-state stays a single plain centered message, not a labeled line. */
+  #compsTable tr.no-comps-row { border: none; background: none; padding: 0; }
+  #compsTable tr.no-comps-row td {
+    display: block;
+    padding: 24px 10px;
+    border-bottom: none !important;
+  }
+  #compsTable tr.no-comps-row td::before { content: none; }
+}

@@ -1,0 +1,115 @@
+/* Sticky Bar — full-width summary strip (see stickybar.js for the render/update logic).
+   Desktop (>=768px): pinned to the TOP of the page via position: sticky, so it stays
+   visible while the user scrolls through the results column. Mobile (<768px): switches to
+   a floating bar FIXED to the BOTTOM of the viewport instead, so it doesn't compete with
+   the header for space on small screens. Hidden by default (no .stickybar-visible class)
+   until stickybar.js's update() is called for the first time.
+   Assumes containerEl (the element passed to StickyBar.init) is placed as a direct child
+   of <body>, near the top, before .wrap — see stickybar.js header comment. */
+
+.stickybar {
+  display: none;
+  position: sticky;
+  top: 0;
+  z-index: 900; /* page-level chrome, above card content; Leaflet's own controls stay in the
+                   400-1000 range internally but live inside the map container, not here */
+  width: 100%;
+  background: var(--nautical-surface);
+  border-bottom: 1px solid var(--nautical-border);
+  box-shadow: var(--nautical-shadow);
+  font-family: var(--font-sans);
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.stickybar.stickybar-visible {
+  display: block;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.stickybar-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 10px 20px;
+  display: grid;
+  /* minmax(0, 1fr): a bare 1fr track's minimum width defaults to its content's min-content
+     size, which would silently force this bar (and the page) wider than the viewport instead
+     of letting the ellipsis/wrap rules on .stickybar-label/.stickybar-value actually engage. */
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.stickybar-stat {
+  display: flex;
+  flex-direction: column;
+  min-width: 0; /* let long values ellipsize/shrink instead of overflowing the grid track */
+  text-align: left;
+}
+
+.stickybar-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--nautical-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stickybar-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--nautical-text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Net Discretionary — color-coded independently of the DTI stat, positive vs. negative. */
+.stickybar-value.is-ok { color: var(--nautical-accent); }
+.stickybar-value.is-bad { color: var(--nautical-bad-text); }
+
+/* DTI status stat — color-coded per tier (ok/warn/bad), applied only to this one value. */
+.stickybar-dti { display: inline-flex; align-items: center; gap: 6px; }
+.stickybar-stat.tier-ok .stickybar-dti { color: var(--nautical-accent); }
+.stickybar-stat.tier-warn .stickybar-dti { color: var(--nautical-warn-text); }
+.stickybar-stat.tier-bad .stickybar-dti { color: var(--nautical-bad-text); }
+
+.stickybar-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* Mobile: pin to the BOTTOM of the viewport as a floating fixed bar instead of sticky-top,
+   so it doesn't compete with the header for space on small screens. */
+@media (max-width: 767px) {
+  .stickybar {
+    position: fixed;
+    top: auto;
+    bottom: 0;
+    left: 0;
+    border-bottom: none;
+    border-top: 1px solid var(--nautical-border);
+    transform: translateY(4px);
+  }
+
+  .stickybar.stickybar-visible {
+    transform: translateY(0);
+  }
+
+  .stickybar-inner {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 16px;
+    padding: 8px 16px;
+  }
+
+  .stickybar-label { font-size: 9.5px; }
+  .stickybar-value { font-size: 14px; }
+}

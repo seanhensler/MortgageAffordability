@@ -142,3 +142,33 @@
   font-family: var(--font-sans);
   font-size: 12.5px;
 }
+
+/* --- Theme the rest of Leaflet's own chrome (popups, zoom control, attribution bar), which
+   otherwise ship with hardcoded white/light-gray styling that clashes with the dark theme.
+   The tile imagery itself (OpenStreetMap) is left alone — swapping to a dark tile provider
+   is a separate, larger change not covered here. --- */
+.cm-map-container .leaflet-popup-content-wrapper,
+.cm-map-container .leaflet-popup-tip {
+  background: var(--nautical-surface);
+  color: var(--nautical-text);
+  box-shadow: var(--nautical-shadow);
+}
+.cm-map-container .leaflet-popup-close-button {
+  color: var(--nautical-muted) !important;
+}
+.cm-map-container .leaflet-control-zoom a {
+  background: var(--nautical-surface);
+  color: var(--nautical-text);
+  border-color: var(--nautical-border) !important;
+}
+.cm-map-container .leaflet-control-zoom a:hover {
+  background: var(--nautical-bg);
+}
+.cm-map-container .leaflet-control-attribution {
+  background: rgba(30, 41, 59, 0.75);
+  color: var(--nautical-muted);
+}
+html[data-theme="light"] .cm-map-container .leaflet-control-attribution {
+  background: rgba(255, 255, 255, 0.75);
+}
+.cm-map-container .leaflet-control-attribution a { color: var(--nautical-accent); }

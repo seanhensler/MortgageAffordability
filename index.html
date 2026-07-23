@@ -11,11 +11,22 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet-geosearch@4.2.0/dist/geosearch.css" />
 <link rel="stylesheet" href="compmap.css">
+<link rel="stylesheet" href="dtigauge.css">
+<link rel="stylesheet" href="stickybar.css">
+<script src="theme.js"></script>
 </head>
 <body>
+<div id="stickybar"></div>
 <div class="wrap">
-  <h1>Mortgage Affordability Calculator</h1>
-  <p class="sub">Allegheny County, PA — live comps, local taxes, and gross-to-net affordability</p>
+  <div class="app-header">
+    <div>
+      <h1>Mortgage Affordability Calculator</h1>
+      <p class="sub">Allegheny County, PA — live comps, local taxes, and gross-to-net affordability</p>
+    </div>
+    <button type="button" id="themeToggle" class="theme-switch" aria-label="Switch to light mode" aria-pressed="true">
+      <span class="theme-switch-knob"></span>
+    </button>
+  </div>
 
   <div class="split-layout">
     <div class="inputs-col">
@@ -24,6 +35,7 @@
         <label>Search address
           <input type="text" id="addressInput" placeholder="e.g. 811 W Monroe Cir, Pittsburgh, PA 15229" autocomplete="off">
         </label>
+        <span class="county-badge" id="countyBadge"></span>
         <p class="hint" id="addressStatus"></p>
         <p class="hint" id="parcelInfo"></p>
       </section>
@@ -153,6 +165,11 @@
       </div>
 
       <div class="tab-panel" id="tab-results">
+        <section class="card empty-state" id="emptyState">
+          <h2>Enter a Property Address or Financials to Begin</h2>
+          <p class="hint">Search an address in the left panel for live county records, or fill in your income and home details and click <strong>Calculate</strong> — your results, lender underwriting status, amortization schedule, and comparable sales will appear here.</p>
+        </section>
+
         <section class="card results" id="results" style="display:none;">
           <h2>Results</h2>
           <div class="grid stats snapshot-stats" id="snapshotStats">
@@ -177,6 +194,7 @@
 
         <section class="card results" id="underwritingCard" style="display:none;">
           <h2>Lender Underwriting Status (28/36 Rule)</h2>
+          <div id="dtiGauge"></div>
           <table id="underwritingTable"></table>
           <div id="qualifyBadge"></div>
         </section>
@@ -188,6 +206,12 @@
           <label>Extra monthly principal payment ($)
             <input type="text" class="money-input" id="extraPayment" value="0">
           </label>
+          <div class="preset-chips" id="extraPaymentChips">
+            <button type="button" class="preset-chip" data-add="100">+$100/mo</button>
+            <button type="button" class="preset-chip" data-add="250">+$250/mo</button>
+            <button type="button" class="preset-chip" data-add="500">+$500/mo</button>
+            <button type="button" class="preset-chip preset-chip-reset" data-reset="extraPayment">Reset</button>
+          </div>
           <p class="hint">Uses the loan amount, rate, and term from your inputs. Click Calculate first if you've changed those.</p>
         </section>
 
@@ -207,6 +231,12 @@
           <label class="spaced-above">Lump sum principal payment ($)
             <input type="text" class="money-input" id="lumpSum" value="0">
           </label>
+          <div class="preset-chips" id="lumpSumChips">
+            <button type="button" class="preset-chip" data-set="5000">$5k Lump Sum</button>
+            <button type="button" class="preset-chip" data-set="10000">$10k Lump Sum</button>
+            <button type="button" class="preset-chip" data-set="25000">$25k Lump Sum</button>
+            <button type="button" class="preset-chip preset-chip-reset" data-reset="lumpSum">Reset</button>
+          </div>
           <label>Target month
             <select id="lumpSumMonth"></select>
           </label>
@@ -299,6 +329,8 @@
 <script src="data.js"></script>
 <script src="tax.js"></script>
 <script src="affordability.js"></script>
+<script src="dtigauge.js"></script>
+<script src="stickybar.js"></script>
 <script src="comps.js"></script>
 <script src="compfilters.js"></script>
 <script src="compfilters-ui.js"></script>

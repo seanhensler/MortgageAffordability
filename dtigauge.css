@@ -1,0 +1,123 @@
+/* DTI Gauge — Front-End / Back-End DTI progress bars for the Lender Underwriting card
+   (Nautical Minimalist tokens only — every color below is a var(--nautical-*) so this
+   re-themes for free between html[data-theme="light"|"dark"], same as the rest of the app).
+   Renders inside an existing .card, which already supplies padding: 24px — no outer wrapper
+   padding/border/shadow here, just the gauge content itself. */
+
+.dti-gauge {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  font-family: var(--font-sans);
+}
+
+.dti-gauge-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dti-gauge-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.dti-gauge-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--nautical-text);
+}
+.dti-gauge-value {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--nautical-text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Track: rounded pill, app-background fill-well, thin border to match input/card framing. */
+.dti-gauge-track {
+  position: relative;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--nautical-bg);
+  border: 1px solid var(--nautical-border);
+  overflow: hidden;
+}
+
+/* Fill — solid tier color, animates on re-render instead of jumping. */
+.dti-gauge-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  border-radius: 999px;
+  transition: width 0.3s ease, background-color 0.2s ease;
+}
+.dti-gauge-fill-ok { background: var(--nautical-accent); }
+.dti-gauge-fill-warn { background: var(--nautical-warn-text); }
+.dti-gauge-fill-bad { background: var(--nautical-bad-text); }
+
+/* Threshold tick marks on the track itself (caution / risk boundaries for THIS bar's scale). */
+.dti-gauge-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--nautical-surface);
+  opacity: 0.7;
+}
+
+.dti-gauge-footer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* Small muted tier-boundary labels (e.g. "28%" / "31%"), positioned under their matching tick. */
+.dti-gauge-ticklabels {
+  position: relative;
+  flex: 1 1 auto;
+  height: 12px;
+  min-width: 0;
+}
+.dti-gauge-ticklabels span {
+  position: absolute;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: var(--nautical-muted);
+  white-space: nowrap;
+}
+
+/* Tier badge — same emerald/amber/rose treatment as .qualify-badge / .verdict-box in styles.css. */
+.dti-gauge-badge {
+  flex: 0 0 auto;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+.dti-gauge-badge-ok { background: var(--nautical-ok-bg); color: var(--nautical-ok-text); }
+.dti-gauge-badge-warn { background: var(--nautical-warn-bg); color: var(--nautical-warn-text); }
+.dti-gauge-badge-bad { background: var(--nautical-bad-bg); color: var(--nautical-bad-text); }
+
+.dti-gauge-context {
+  font-size: 11px;
+  color: var(--nautical-muted);
+}
+
+/* Overall one-line status — sized/bordered like styles.css .verdict-box, worst-tier color. */
+.dti-gauge-overall {
+  margin-top: 4px;
+  padding: 16px 20px;
+  border-radius: 8px;
+  border: 1px solid var(--nautical-border);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+}
+.dti-gauge-overall-ok { background: var(--nautical-ok-bg); color: var(--nautical-ok-text); }
+.dti-gauge-overall-warn { background: var(--nautical-warn-bg); color: var(--nautical-warn-text); }
+.dti-gauge-overall-bad { background: var(--nautical-bad-bg); color: var(--nautical-bad-text); }
